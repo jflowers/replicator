@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,10 +13,10 @@ import (
 	"github.com/unbound-force/replicator/internal/db"
 )
 
-// jsonRPCHandler returns an http.HandlerFunc that accepts JSON-RPC 2.0 POST
-// requests and responds with a success result. Validates method, content type,
-// and JSON-RPC protocol fields for regression protection.
-func jsonRPCHandler() http.HandlerFunc {
+// mcpHandler returns an http.HandlerFunc that mimics the MCP Streamable HTTP
+// transport. It validates POST method, Content-Type, Accept header, and
+// JSON-RPC protocol fields. Responds with SSE-formatted JSON-RPC success.
+func mcpHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -24,6 +25,12 @@ func jsonRPCHandler() http.HandlerFunc {
 
 		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
 			http.Error(w, "wrong content type", http.StatusUnsupportedMediaType)
+			return
+		}
+
+		accept := r.Header.Get("Accept")
+		if !strings.Contains(accept, "application/json") || !strings.Contains(accept, "text/event-stream") {
+			http.Error(w, "Accept must contain both 'application/json' and 'text/event-stream'", http.StatusBadRequest)
 			return
 		}
 
@@ -51,13 +58,22 @@ func jsonRPCHandler() http.HandlerFunc {
 		id, _ := req["id"].(float64)
 		resp := map[string]any{
 			"jsonrpc": "2.0",
-			"result":  map[string]any{"status": "healthy"},
-			"id":      int(id),
+			"result": map[string]any{
+				"capabilities":    map[string]any{},
+				"protocolVersion": "2025-03-26",
+				"serverInfo":      map[string]any{"name": "dewey", "version": "test"},
+			},
+			"id": int(id),
 		}
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		respJSON, err := json.Marshal(resp)
+		if err != nil {
 			http.Error(w, "encode error", http.StatusInternalServerError)
+			return
 		}
+
+		// Respond in SSE format, matching the MCP Streamable HTTP transport.
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintf(w, "event: message\ndata: %s\n\n", respJSON)
 	}
 }
 
@@ -75,7 +91,7 @@ func TestRun_AllChecks(t *testing.T) {
 	store := testStore(t)
 
 	// Mock Dewey as healthy JSON-RPC endpoint.
-	srv := httptest.NewServer(jsonRPCHandler())
+	srv := httptest.NewServer(mcpHandler())
 	defer srv.Close()
 
 	cfg := &config.Config{
@@ -140,7 +156,7 @@ func TestCheckDatabase_Closed(t *testing.T) {
 }
 
 func TestCheckDewey_Healthy(t *testing.T) {
-	srv := httptest.NewServer(jsonRPCHandler())
+	srv := httptest.NewServer(mcpHandler())
 	defer srv.Close()
 
 	result := checkDewey(srv.URL)
@@ -191,9 +207,8 @@ func TestCheckDewey_HTTPError(t *testing.T) {
 
 func TestCheckDewey_RPCError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := `{"jsonrpc":"2.0","error":{"code":-32601,"message":"method not found"},"id":1}`
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(resp))
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32601,\"message\":\"method not found\"},\"id\":1}\n\n")
 	}))
 	defer srv.Close()
 
@@ -226,7 +241,7 @@ func TestCheckConfigDir(t *testing.T) {
 func TestCheckResult_StatusValues(t *testing.T) {
 	// Verify that all results use valid status values.
 	store := testStore(t)
-	srv := httptest.NewServer(jsonRPCHandler())
+	srv := httptest.NewServer(mcpHandler())
 	defer srv.Close()
 
 	cfg := &config.Config{DeweyURL: srv.URL}
