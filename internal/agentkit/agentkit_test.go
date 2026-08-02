@@ -212,6 +212,157 @@ func TestHandoffMD_StructuralHardening(t *testing.T) {
 	}
 }
 
+func TestCoordinatorPrompt_StructuralResilience(t *testing.T) {
+	// Verify structural properties of coordinator.md that ensure
+	// compression resilience: identity-first opening, constraints
+	// before protocol, uppercase keywords, and behavioral parity.
+	data, err := content.ReadFile("content/agents/coordinator.md")
+	if err != nil {
+		t.Fatalf("read coordinator.md: %v", err)
+	}
+
+	text := string(data)
+
+	// --- YAML front matter validation ---
+	if !strings.HasPrefix(text, "---\n") {
+		t.Fatal("coordinator.md: missing opening frontmatter delimiter")
+	}
+	endIdx := strings.Index(text[4:], "\n---")
+	if endIdx < 0 {
+		t.Fatal("coordinator.md: missing closing frontmatter delimiter")
+	}
+	frontmatter := text[4 : 4+endIdx]
+
+	fmChecks := []string{"name: coordinator", "mode: subagent", "description:"}
+	for _, want := range fmChecks {
+		if !strings.Contains(frontmatter, want) {
+			t.Errorf("frontmatter missing %q", want)
+		}
+	}
+
+	// Body is everything after the closing "---\n".
+	body := text[4+endIdx+4:] // skip past "\n---\n"
+
+	// --- Identity-first opening contains prohibition ---
+	// Find the first non-heading paragraph. Skip past the "# Heading"
+	// line and any blank lines to find the identity statement.
+	// Split into paragraphs (separated by blank lines) and find the
+	// first one that is not a heading.
+	paragraphs := strings.Split(body, "\n\n")
+	firstParagraph := ""
+	for _, p := range paragraphs {
+		trimmed := strings.TrimSpace(p)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		firstParagraph = trimmed
+		break
+	}
+	if firstParagraph == "" {
+		t.Fatal("coordinator.md: no non-heading paragraph found in body")
+	}
+	if !strings.Contains(firstParagraph, "NEVER") {
+		t.Error("first paragraph missing uppercase 'NEVER' keyword")
+	}
+	if !strings.Contains(strings.ToLower(firstParagraph), "reserve") {
+		t.Error("first paragraph missing file reservation prohibition ('reserve')")
+	}
+
+	// --- Section ordering: Critical Constraints before Protocol before Available Tools ---
+	constraintsIdx := strings.Index(body, "## Critical Constraints")
+	protocolIdx := strings.Index(body, "## Protocol")
+	toolsIdx := strings.Index(body, "## Available Tools")
+
+	if constraintsIdx < 0 {
+		t.Error("missing '## Critical Constraints' section")
+	}
+	if protocolIdx < 0 {
+		t.Error("missing '## Protocol' section")
+	}
+	if toolsIdx < 0 {
+		t.Error("missing '## Available Tools' section")
+	}
+
+	if constraintsIdx >= 0 && protocolIdx >= 0 && constraintsIdx >= protocolIdx {
+		t.Error("'## Critical Constraints' must appear before '## Protocol'")
+	}
+	if protocolIdx >= 0 && toolsIdx >= 0 && protocolIdx >= toolsIdx {
+		t.Error("'## Protocol' must appear before '## Available Tools'")
+	}
+
+	// --- Behavioral rule markers: all 6 original rules must be present ---
+	ruleMarkers := map[string]string{
+		"comms_init":      "comms init rule",
+		"reserve":         "file reservation rule",
+		"forge_review":    "review completions rule",
+		"hivemind_store":  "store learnings rule",
+		"comms_inbox":     "check inbox rule",
+		"forge_broadcast": "broadcast context rule",
+	}
+	bodyLower := strings.ToLower(body)
+	for marker, desc := range ruleMarkers {
+		if !strings.Contains(bodyLower, strings.ToLower(marker)) {
+			t.Errorf("missing behavioral rule marker %q (%s)", marker, desc)
+		}
+	}
+
+	// --- Uppercase RFC 2119 keywords in constraints ---
+	constraintsSection := ""
+	if constraintsIdx >= 0 && protocolIdx >= 0 {
+		constraintsSection = body[constraintsIdx:protocolIdx]
+	}
+	if constraintsSection != "" {
+		if !strings.Contains(constraintsSection, "NEVER") {
+			t.Error("Critical Constraints section missing uppercase 'NEVER' keyword")
+		}
+		if !strings.Contains(constraintsSection, "MUST") {
+			t.Error("Critical Constraints section missing uppercase 'MUST' keyword")
+		}
+		// Verify every bullet line in constraints has an uppercase keyword.
+		for _, line := range strings.Split(constraintsSection, "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "-") {
+				hasKeyword := strings.Contains(line, "NEVER") ||
+					strings.Contains(line, "MUST") ||
+					strings.Contains(line, "ALWAYS")
+				if !hasKeyword {
+					t.Errorf("constraint line missing uppercase RFC 2119 keyword: %q", line)
+				}
+			}
+		}
+	}
+
+	// --- FR-003: Explicit review-before-complete ordering ---
+	if !strings.Contains(body, "BEFORE") ||
+		!strings.Contains(body, "forge_review") ||
+		!strings.Contains(body, "forge_complete") {
+		t.Error("missing explicit ordering: forge_review BEFORE forge_complete (FR-003)")
+	}
+	// Verify forge_review appears before forge_complete in constraints section.
+	if constraintsSection != "" {
+		reviewIdx := strings.Index(constraintsSection, "forge_review")
+		completeIdx := strings.Index(constraintsSection, "forge_complete")
+		if reviewIdx >= 0 && completeIdx >= 0 && reviewIdx >= completeIdx {
+			t.Error("forge_review must appear before forge_complete in Critical Constraints")
+		}
+	}
+
+	// --- Compression resilience: first 50% of body lines contain critical constraints ---
+	bodyLines := strings.Split(body, "\n")
+	halfLen := len(bodyLines) / 2
+	firstHalf := strings.Join(bodyLines[:halfLen], "\n")
+	firstHalfLower := strings.ToLower(firstHalf)
+
+	if !strings.Contains(firstHalf, "NEVER") || !strings.Contains(firstHalfLower, "reserve") {
+		t.Error("first 50%% of body lines must contain file reservation prohibition (NEVER + reserve)")
+	}
+	if !strings.Contains(firstHalfLower, "forge_review") || !strings.Contains(firstHalfLower, "forge_complete") {
+		t.Error("first 50%% of body lines must contain review-before-complete ordering (forge_review + forge_complete)")
+	}
+	if !strings.Contains(firstHalfLower, "edit code") {
+		t.Error("first 50%% of body lines must contain code editing prohibition ('edit code')")
+	}
+}
+
 func TestSkillTemplates_HaveNameField(t *testing.T) {
 	// Walk the embedded content filesystem and verify every SKILL.md
 	// has a "name: <directory-name>" field in its YAML frontmatter.
