@@ -396,6 +396,85 @@ func TestCoordinatorPrompt_StructuralResilience(t *testing.T) {
 	})
 }
 
+func TestWorkerPrompt_HardenedStructure(t *testing.T) {
+	// Verify the hardened worker.md has inline constraints, no separate
+	// Constraints section, mandatory language, reservation failure recovery,
+	// and stays under 35 lines.
+	data, err := content.ReadFile("content/agents/worker.md")
+	if err != nil {
+		t.Fatalf("read worker.md: %v", err)
+	}
+	text := string(data)
+	lines := strings.Split(text, "\n")
+
+	// Line count: must be <= 35 (design decision D4).
+	if len(lines) > 35 {
+		t.Errorf("worker.md has %d lines, want <= 35", len(lines))
+	}
+
+	// No separate "## Constraints" section.
+	if strings.Contains(text, "## Constraints") {
+		t.Error("worker.md still contains a '## Constraints' heading; should be removed")
+	}
+
+	// Find the comms_reserve step and verify it contains MUST or NEVER
+	// language about file editing.
+	var reserveStep string
+	for _, line := range lines {
+		if strings.Contains(line, "comms_reserve") {
+			reserveStep = line
+			break
+		}
+	}
+	if reserveStep == "" {
+		t.Fatal("worker.md: no line containing 'comms_reserve' found")
+	}
+	if !strings.Contains(reserveStep, "MUST") && !strings.Contains(reserveStep, "NEVER") {
+		t.Errorf("comms_reserve step lacks MUST/NEVER constraint: %q", reserveStep)
+	}
+	if !strings.Contains(reserveStep, "NEVER") {
+		t.Errorf("comms_reserve step missing NEVER constraint about file editing: %q", reserveStep)
+	}
+
+	// Verify forge_progress step contains "MUST".
+	var progressStep string
+	for _, line := range lines {
+		if strings.Contains(line, "forge_progress") {
+			progressStep = line
+			break
+		}
+	}
+	if progressStep == "" {
+		t.Fatal("worker.md: no line containing 'forge_progress' found")
+	}
+	if !strings.Contains(progressStep, "MUST") {
+		t.Errorf("forge_progress step lacks MUST language: %q", progressStep)
+	}
+
+	// Verify hivemind_store step contains "MUST".
+	var storeStep string
+	for _, line := range lines {
+		if strings.Contains(line, "hivemind_store") {
+			storeStep = line
+			break
+		}
+	}
+	if storeStep == "" {
+		t.Fatal("worker.md: no line containing 'hivemind_store' found")
+	}
+	if !strings.Contains(storeStep, "MUST") {
+		t.Errorf("hivemind_store step lacks MUST language: %q", storeStep)
+	}
+
+	// Verify reservation failure recovery instruction is co-located
+	// with the comms_reserve step (STOP + comms_send on the same step).
+	if !strings.Contains(reserveStep, "comms_send") {
+		t.Errorf("comms_reserve step lacks comms_send recovery instruction: %q", reserveStep)
+	}
+	if !strings.Contains(reserveStep, "STOP") {
+		t.Errorf("comms_reserve step lacks STOP instruction for reservation failure: %q", reserveStep)
+}
+
 func TestSkillTemplates_HaveNameField(t *testing.T) {
 	// Walk the embedded content filesystem and verify every SKILL.md
 	// has a "name: <directory-name>" field in its YAML frontmatter.
