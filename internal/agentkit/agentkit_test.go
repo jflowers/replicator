@@ -152,6 +152,66 @@ func TestScaffold_FileCount(t *testing.T) {
 	}
 }
 
+func TestHandoffMD_StructuralHardening(t *testing.T) {
+	data, err := content.ReadFile("content/commands/handoff.md")
+	if err != nil {
+		t.Fatalf("read embedded handoff.md: %v", err)
+	}
+	text := string(data)
+
+	// (1) Ordering constraint text appears before the first numbered step.
+	const orderingConstraint = "Steps MUST execute in this exact order"
+	constraintIdx := strings.Index(text, orderingConstraint)
+	if constraintIdx < 0 {
+		t.Error("handoff.md: missing ordering constraint text")
+	}
+	// Find first numbered step (line starting with "0." or "1.").
+	firstStepIdx := strings.Index(text, "\n0.")
+	if firstStepIdx < 0 {
+		firstStepIdx = strings.Index(text, "\n1.")
+	}
+	if firstStepIdx < 0 {
+		t.Error("handoff.md: no numbered workflow steps found")
+	} else if constraintIdx >= firstStepIdx {
+		t.Error("handoff.md: ordering constraint must appear before the first numbered step")
+	}
+
+	// (2) Handoff note categories appear within the org_session_end step section.
+	sessionEndIdx := strings.Index(text, "org_session_end")
+	if sessionEndIdx < 0 {
+		t.Fatal("handoff.md: missing org_session_end reference")
+	}
+	afterSessionEnd := text[sessionEndIdx:]
+	categories := []string{"Completed", "In Progress", "Blocked", "Next Steps", "Gotchas"}
+	for _, cat := range categories {
+		if !strings.Contains(afterSessionEnd, cat) {
+			t.Errorf("handoff.md: handoff note category %q not found after org_session_end", cat)
+		}
+	}
+
+	// (3) Separate "## Handoff Note Template" section is absent.
+	if strings.Contains(text, "## Handoff Note Template") {
+		t.Error("handoff.md: separate '## Handoff Note Template' section should be removed")
+	}
+
+	// (4) Forge precondition check text is present.
+	if !strings.Contains(text, "Forge precondition check") {
+		t.Error("handoff.md: missing forge precondition check step")
+	}
+
+	// (5) Step dependency rationale is present for each step (2-5).
+	for _, dep := range []string{
+		"Depends on step 1",
+		"Depends on step 2",
+		"Depends on step 3",
+		"Depends on step 4",
+	} {
+		if !strings.Contains(text, dep) {
+			t.Errorf("handoff.md: missing dependency rationale %q", dep)
+		}
+	}
+}
+
 func TestSkillTemplates_HaveNameField(t *testing.T) {
 	// Walk the embedded content filesystem and verify every SKILL.md
 	// has a "name: <directory-name>" field in its YAML frontmatter.
