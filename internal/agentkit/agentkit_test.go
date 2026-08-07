@@ -511,6 +511,7 @@ func TestWorkerPrompt_HardenedStructure(t *testing.T) {
 	}
 }
 
+
 func TestForgeMD_StructuralHardening(t *testing.T) {
 	// Read forge.md from embedded content.
 	data, err := content.ReadFile("content/commands/forge.md")
@@ -902,6 +903,162 @@ func TestForgeCoordinationSkill_StructuralHardening(t *testing.T) {
 		t.Error("forge-coordination SKILL.md: embedded copy and .opencode copy are not byte-identical")
 	}
 }
+
+func TestAlwaysOnGuidance_StructuralHardening(t *testing.T) {
+	data, err := content.ReadFile("content/skills/always-on-guidance/SKILL.md")
+	if err != nil {
+		t.Fatalf("read embedded always-on-guidance/SKILL.md: %v", err)
+	}
+	text := string(data)
+
+	// (1) Critical Safety section exists and appears before Tool Usage Discipline.
+	safetyIdx := strings.Index(text, "## Critical Safety")
+	if safetyIdx < 0 {
+		t.Error("always-on-guidance: missing '## Critical Safety' section")
+	}
+	toolUsageIdx := strings.Index(text, "## Tool Usage Discipline")
+	if toolUsageIdx < 0 {
+		t.Error("always-on-guidance: missing '## Tool Usage Discipline' section")
+	}
+	if safetyIdx >= 0 && toolUsageIdx >= 0 && safetyIdx >= toolUsageIdx {
+		t.Error("always-on-guidance: '## Critical Safety' must appear before '## Tool Usage Discipline'")
+	}
+
+	// (2) Force push rule uses RFC 2119 uppercase keyword (DR-002).
+	if !strings.Contains(text, "NEVER force push") {
+		t.Error("always-on-guidance: force push rule must use RFC 2119 keyword 'NEVER'")
+	}
+
+	// (3) hivemind_find is the first item in Tool Usage Discipline section.
+	if toolUsageIdx >= 0 {
+		afterToolUsage := text[toolUsageIdx:]
+		firstDashIdx := strings.Index(afterToolUsage, "\n- ")
+		if firstDashIdx < 0 {
+			t.Error("always-on-guidance: no list items in Tool Usage Discipline")
+		} else {
+			// Extract the first list item line.
+			firstItemStart := firstDashIdx + 3 // skip "\n- "
+			firstItemEnd := strings.Index(afterToolUsage[firstItemStart:], "\n")
+			if firstItemEnd < 0 {
+				firstItemEnd = len(afterToolUsage) - firstItemStart
+			}
+			firstItem := afterToolUsage[firstItemStart : firstItemStart+firstItemEnd]
+			if !strings.Contains(firstItem, "hivemind_find") {
+				t.Errorf("always-on-guidance: first Tool Usage item should mention hivemind_find, got %q", firstItem)
+			}
+		}
+	}
+
+	// (4) Code Quality split into sub-headers.
+	for _, sub := range []string{"### Structure", "### Clarity"} {
+		if !strings.Contains(text, sub) {
+			t.Errorf("always-on-guidance: missing Code Quality sub-header %q", sub)
+		}
+	}
+
+	// (5) Testing split into sub-headers.
+	for _, sub := range []string{"### Test Infrastructure", "### Test Practice"} {
+		if !strings.Contains(text, sub) {
+			t.Errorf("always-on-guidance: missing Testing sub-header %q", sub)
+		}
+	}
+
+	// (6) Error Handling split into sub-headers.
+	for _, sub := range []string{"### Error Propagation", "### Error Coverage"} {
+		if !strings.Contains(text, sub) {
+			t.Errorf("always-on-guidance: missing Error Handling sub-header %q", sub)
+		}
+	}
+}
+
+func TestForgeGlobal_StructuralHardening(t *testing.T) {
+	data, err := content.ReadFile("content/skills/forge-global/SKILL.md")
+	if err != nil {
+		t.Fatalf("read embedded forge-global/SKILL.md: %v", err)
+	}
+	text := string(data)
+
+	// (1) Decision table format with Signal/Forge/Skip columns.
+	if !strings.Contains(text, "| Signal | Forge | Skip |") {
+		t.Error("forge-global: missing decision table header (Signal/Forge/Skip)")
+	}
+
+	// (2) All 6 original criteria present in decision table.
+	criteria := []string{
+		"File count",
+		"Task structure",
+		"Work type",
+		"3+ files",
+		"single-file change",
+		"parallelize",
+	}
+	for _, c := range criteria {
+		if !strings.Contains(text, c) {
+			t.Errorf("forge-global: decision table missing criterion %q", c)
+		}
+	}
+
+	// (3) Temporal ordering markers in File Reservation Protocol.
+	for _, marker := range []string{"FIRST,", "THEN,", "FINALLY,"} {
+		if !strings.Contains(text, marker) {
+			t.Errorf("forge-global: missing temporal marker %q in File Reservation Protocol", marker)
+		}
+	}
+
+	// (4) TTL inlined in step 1 with specific value.
+	if !strings.Contains(text, "ttl_seconds=300") {
+		t.Error("forge-global: ttl_seconds=300 must be inlined in reservation step")
+	}
+
+	// (5) TTL explanation parenthetical present (5-minute auto-release).
+	if !strings.Contains(text, "(5-minute auto-release)") {
+		t.Error("forge-global: missing '(5-minute auto-release)' explanation for TTL")
+	}
+
+	// (6) No standalone TTL bullet (old format removed).
+	lines := strings.Split(text, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Old format was a standalone step like "3. Set `ttl_seconds` to auto-release..."
+		if strings.HasPrefix(trimmed, "3.") && strings.Contains(trimmed, "ttl_seconds") && strings.Contains(trimmed, "auto-release") {
+			t.Error("forge-global: standalone TTL step should be removed (inlined into step 1)")
+		}
+	}
+}
+
+func TestSkillFiles_DriftDetection(t *testing.T) {
+	// TC-007: Verify embedded skill files match the .opencode/ scaffolded copies.
+	// This detects drift where one copy is updated but the other is not.
+	//
+	// Find the repo root by walking up from the test working directory
+	// until we find go.mod.
+	repoRoot := findRepoRoot(t)
+
+	skills := []string{
+		"always-on-guidance",
+		"forge-global",
+	}
+
+	for _, skill := range skills {
+		embeddedPath := filepath.Join("content", "skills", skill, "SKILL.md")
+		embedded, err := content.ReadFile(embeddedPath)
+		if err != nil {
+			t.Fatalf("read embedded %s: %v", embeddedPath, err)
+		}
+
+		scaffoldedPath := filepath.Join(repoRoot, ".opencode", "skills", skill, "SKILL.md")
+		scaffolded, err := os.ReadFile(scaffoldedPath)
+		if err != nil {
+			t.Fatalf("read scaffolded %s: %v", scaffoldedPath, err)
+		}
+
+		if string(embedded) != string(scaffolded) {
+			t.Errorf("drift detected: embedded %s differs from scaffolded .opencode/skills/%s/SKILL.md", embeddedPath, skill)
+		}
+	}
+}
+
+
 
 func TestSkillTemplates_HaveNameField(t *testing.T) {
 	// Walk the embedded content filesystem and verify every SKILL.md
