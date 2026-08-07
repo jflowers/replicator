@@ -491,6 +491,175 @@ func TestWorkerPrompt_HardenedStructure(t *testing.T) {
 	}
 }
 
+func TestForgeMD_StructuralHardening(t *testing.T) {
+	// Read forge.md from embedded content.
+	data, err := content.ReadFile("content/commands/forge.md")
+	if err != nil {
+		t.Fatalf("read forge.md: %v", err)
+	}
+	text := string(data)
+	lines := strings.Split(text, "\n")
+
+	// Helper: find the line index of a heading (e.g., "## Critical Invariants").
+	findHeading := func(heading string) int {
+		for i, line := range lines {
+			if strings.TrimSpace(line) == heading {
+				return i
+			}
+		}
+		return -1
+	}
+
+	// Helper: extract the section between a heading and the next same-level heading.
+	sectionContent := func(heading string) string {
+		start := findHeading(heading)
+		if start < 0 {
+			return ""
+		}
+		level := 0
+		for _, ch := range heading {
+			if ch == '#' {
+				level++
+			} else {
+				break
+			}
+		}
+		var sb strings.Builder
+		for i := start + 1; i < len(lines); i++ {
+			trimmed := strings.TrimSpace(lines[i])
+			if strings.HasPrefix(trimmed, strings.Repeat("#", level)+" ") && !strings.HasPrefix(trimmed, strings.Repeat("#", level+1)) {
+				break
+			}
+			sb.WriteString(lines[i])
+			sb.WriteString("\n")
+		}
+		return sb.String()
+	}
+
+	// Scenario 1: Critical Invariants section appears before Workflow section.
+	t.Run("InvariantsBeforeWorkflow", func(t *testing.T) {
+		invIdx := findHeading("## Critical Invariants")
+		wfIdx := findHeading("## Workflow")
+		if invIdx < 0 {
+			t.Fatal("Critical Invariants section not found")
+		}
+		if wfIdx < 0 {
+			t.Fatal("Workflow section not found")
+		}
+		if invIdx >= wfIdx {
+			t.Errorf("Critical Invariants (line %d) must appear before Workflow (line %d)", invIdx, wfIdx)
+		}
+	})
+
+	// Scenario 2: Review-before-complete invariant is present in Critical Invariants.
+	t.Run("ReviewBeforeCompleteInvariant", func(t *testing.T) {
+		section := sectionContent("## Critical Invariants")
+		if section == "" {
+			t.Fatal("Critical Invariants section not found")
+		}
+		lower := strings.ToLower(section)
+		if !strings.Contains(lower, "review") || !strings.Contains(lower, "before") {
+			t.Error("Critical Invariants must contain review-before-complete constraint")
+		}
+		if !strings.Contains(section, "MUST") {
+			t.Error("Critical Invariants must use RFC 2119 MUST language for review constraint")
+		}
+	})
+
+	// Scenario 3: skip_review prohibition is present in Critical Invariants.
+	t.Run("SkipReviewProhibition", func(t *testing.T) {
+		section := sectionContent("## Critical Invariants")
+		if section == "" {
+			t.Fatal("Critical Invariants section not found")
+		}
+		if !strings.Contains(section, "skip_review") {
+			t.Error("Critical Invariants must contain skip_review prohibition")
+		}
+		if !strings.Contains(section, "NEVER") {
+			t.Error("Critical Invariants must use NEVER for skip_review prohibition")
+		}
+	})
+
+	// Scenario 4: Review-before-complete constraint has redundant placement
+	// (present in both Critical Invariants AND at least one other section).
+	t.Run("RedundantReviewConstraint", func(t *testing.T) {
+		invariants := sectionContent("## Critical Invariants")
+		workflow := sectionContent("## Workflow")
+		rules := sectionContent("## Rules")
+
+		inInvariants := strings.Contains(strings.ToLower(invariants), "review") &&
+			strings.Contains(strings.ToLower(invariants), "before")
+		inWorkflow := strings.Contains(strings.ToLower(workflow), "review") &&
+			strings.Contains(strings.ToLower(workflow), "before")
+		inRules := strings.Contains(strings.ToLower(rules), "review") &&
+			strings.Contains(strings.ToLower(rules), "before") &&
+			strings.Contains(strings.ToLower(rules), "complete")
+
+		if !inInvariants {
+			t.Error("review-before-complete not found in Critical Invariants")
+		}
+		if !inWorkflow && !inRules {
+			t.Error("review-before-complete must appear in at least one section beyond Critical Invariants")
+		}
+	})
+
+	// Scenario 5: Step 7 text includes explicit ordering constraint.
+	t.Run("Step7OrderingConstraint", func(t *testing.T) {
+		workflow := sectionContent("## Workflow")
+		if workflow == "" {
+			t.Fatal("Workflow section not found")
+		}
+		// Find step 7 line.
+		hasStep7Constraint := false
+		for _, line := range strings.Split(workflow, "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "7.") {
+				lower := strings.ToLower(line)
+				if strings.Contains(lower, "first") || strings.Contains(lower, "before step 8") ||
+					strings.Contains(line, "MUST") {
+					hasStep7Constraint = true
+				}
+				break
+			}
+		}
+		if !hasStep7Constraint {
+			t.Error("Step 7 must contain explicit ordering constraint (FIRST/before step 8/MUST)")
+		}
+	})
+
+	// Scenario 6: Review rule is first item in Rules section.
+	t.Run("ReviewRuleFirstInRules", func(t *testing.T) {
+		rules := sectionContent("## Rules")
+		if rules == "" {
+			t.Fatal("Rules section not found")
+		}
+		// Find first bullet in Rules section.
+		for _, line := range strings.Split(rules, "\n") {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "- ") {
+				lower := strings.ToLower(trimmed)
+				if !strings.Contains(lower, "review") {
+					t.Errorf("first Rules bullet must be about review, got: %s", trimmed)
+				}
+				break
+			}
+		}
+	})
+
+	// Scenario 7: No standalone Strategy Selection, Error Recovery, or Completion sections.
+	t.Run("NoStandaloneSections", func(t *testing.T) {
+		prohibited := []string{
+			"## Strategy Selection",
+			"## Error Recovery",
+			"## Completion",
+		}
+		for _, heading := range prohibited {
+			if findHeading(heading) >= 0 {
+				t.Errorf("found prohibited standalone section: %s", heading)
+			}
+		}
+	})
+}
+
 func TestSkillTemplates_HaveNameField(t *testing.T) {
 	// Walk the embedded content filesystem and verify every SKILL.md
 	// has a "name: <directory-name>" field in its YAML frontmatter.

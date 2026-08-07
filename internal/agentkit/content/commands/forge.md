@@ -12,7 +12,7 @@ These rules are non-negotiable and MUST NOT be skipped:
 
 - **Review MUST complete before marking work done** — step 7 (review) MUST finish before step 8 (complete). NEVER skip review.
 - **NEVER pass `skip_review: true` to `forge_complete`** — the review gate exists to catch broken work before it is marked done.
-- Always create a forge, even for small tasks.
+- ALWAYS create a forge, even for small tasks.
 - Coordinator orchestrates, workers execute — workers MUST NOT call `forge_complete`.
 
 ## Task
