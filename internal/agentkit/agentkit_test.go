@@ -417,18 +417,31 @@ func TestWorkerPrompt_HardenedStructure(t *testing.T) {
 		t.Error("worker.md still contains a '## Constraints' heading; should be removed")
 	}
 
+	// stepWindow returns the text of the line at idx plus the next windowSize
+	// lines, joined together. This allows assertions that tolerate content
+	// being split across sub-bullets without requiring single-line co-location.
+	const windowSize = 3
+	stepWindow := func(idx int) string {
+		end := idx + windowSize + 1
+		if end > len(lines) {
+			end = len(lines)
+		}
+		return strings.Join(lines[idx:end], "\n")
+	}
+
 	// Find the comms_reserve step and verify it contains MUST or NEVER
 	// language about file editing.
-	var reserveStep string
-	for _, line := range lines {
+	reserveIdx := -1
+	for i, line := range lines {
 		if strings.Contains(line, "comms_reserve") {
-			reserveStep = line
+			reserveIdx = i
 			break
 		}
 	}
-	if reserveStep == "" {
+	if reserveIdx == -1 {
 		t.Fatal("worker.md: no line containing 'comms_reserve' found")
 	}
+	reserveStep := lines[reserveIdx]
 	if !strings.Contains(reserveStep, "MUST") && !strings.Contains(reserveStep, "NEVER") {
 		t.Errorf("comms_reserve step lacks MUST/NEVER constraint: %q", reserveStep)
 	}
@@ -466,13 +479,16 @@ func TestWorkerPrompt_HardenedStructure(t *testing.T) {
 		t.Errorf("hivemind_store step lacks MUST language: %q", storeStep)
 	}
 
-	// Verify reservation failure recovery instruction is co-located
-	// with the comms_reserve step (STOP + comms_send on the same step).
-	if !strings.Contains(reserveStep, "comms_send") {
-		t.Errorf("comms_reserve step lacks comms_send recovery instruction: %q", reserveStep)
+	// Verify reservation failure recovery instruction is co-located with the
+	// comms_reserve step. Search within a window of lines (current + next 3)
+	// so the assertion tolerates sub-bullet reformatting.
+	reserveWindow := stepWindow(reserveIdx)
+	if !strings.Contains(reserveWindow, "comms_send") {
+		t.Errorf("comms_reserve step window lacks comms_send recovery instruction:\n%s", reserveWindow)
 	}
-	if !strings.Contains(reserveStep, "STOP") {
-		t.Errorf("comms_reserve step lacks STOP instruction for reservation failure: %q", reserveStep)
+	if !strings.Contains(reserveWindow, "STOP") {
+		t.Errorf("comms_reserve step window lacks STOP instruction for reservation failure:\n%s", reserveWindow)
+	}
 }
 
 func TestSkillTemplates_HaveNameField(t *testing.T) {
