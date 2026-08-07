@@ -20,7 +20,7 @@ The coordinator prompt is the most fragile. Its single critical negative constra
 - Maintain behavioral parity for existing rules; make the implicit `forge_review` → `forge_complete` ordering explicit
 
 ### Non-Goals
-- Changing the coordinator's actual behavioral contract (no new rules, no removed rules — the `forge_review` → `forge_complete` ordering is a codification of existing implicit behavior from the forge coordination skill)
+- Changing the coordinator's actual behavioral contract (no removed rules — the `forge_review` → `forge_complete` ordering and the `NEVER edit code directly` prohibition are codifications of existing implicit behavior: the forge coordination skill defines review-before-complete ordering, and the coordinator's identity as a non-coding orchestrator implies it should not edit code directly)
 - Hardening other agent prompts (`worker.md`, `background-worker.md`) — those are separate changes
 - Adding runtime enforcement of constraints (e.g., tool-level guards blocking out-of-order calls)
 - Modifying the forge coordination skill (`SKILL.md`) — it already follows the reference pattern
@@ -63,7 +63,7 @@ The existing YAML front matter (`name`, `description`, `mode`) and the "Availabl
 
 The restructured prompt will be approximately 30-40 lines (up from 22). This adds ~18 lines of context to every coordinator session.
 
-**Mitigation**: The added lines are structural (section headers, numbered steps) rather than new information. The actual constraint count stays at 6. The trade-off is acceptable: 18 lines of context is trivial compared to the risk of a coordinator that silently drops quality gates.
+**Mitigation**: The added lines are structural (section headers, numbered steps) rather than new information. The constraint count grows from 6 to 7 (adding the explicit "NEVER edit code directly" prohibition, which codifies the coordinator's existing non-coding role). The trade-off is acceptable: 18 lines of context is trivial compared to the risk of a coordinator that silently drops quality gates.
 
 ### Compression-resistance is heuristic, not guaranteed
 

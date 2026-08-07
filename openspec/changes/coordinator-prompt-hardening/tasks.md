@@ -19,7 +19,7 @@
   - Include explicit ordering: MUST call `forge_review` for every worker BEFORE `forge_complete` (codifying implicit ordering from forge coordination skill)
   - Convert unordered rules list to numbered "Protocol" section with explicit workflow ordering
   - Preserve "Available Tools" section at the end
-  - Maintain behavioral parity: all 6 original rules (comms init, no file reservation, review completions, store learnings, check inbox, broadcast context) MUST remain with equivalent semantics — verified by the presence of these tool references: `comms_init`, `reserve`, `forge_review`, `hivemind_store`, `comms_inbox`, `forge_broadcast`
+  - Maintain behavioral parity: all 7 rules (6 original + 1 codified: comms init, no file reservation, no code editing, review completions, store learnings, check inbox, broadcast context) MUST remain with equivalent semantics — verified by the presence of these markers: `comms_init`, `reserve`, `edit code`, `forge_review`, `hivemind_store`, `comms_inbox`, `forge_broadcast`
 
 ## 2. Automated structural test
 
@@ -28,7 +28,7 @@
   - The first paragraph after front matter contains the uppercase keyword "NEVER" and the phrase "reserve" (identity-first prohibition)
   - A "Critical Constraints" section header appears before a "Protocol" section header
   - Both appear before the "Available Tools" section header
-  - All 6 behavioral rule markers are present: `comms_init`, `reserve`, `forge_review`, `hivemind_store`, `comms_inbox`, `forge_broadcast`
+  - All 7 behavioral rule markers are present: `comms_init`, `reserve`, `edit code`, `forge_review`, `hivemind_store`, `comms_inbox`, `forge_broadcast`
   - Constraint lines use uppercase RFC 2119 keywords (MUST, NEVER, ALWAYS)
   - The first 50% of lines after front matter contain both the file reservation prohibition and the review-before-complete ordering
 

@@ -54,12 +54,13 @@ The restructured coordinator prompt MUST preserve the original YAML front matter
 
 ### FR-006: Behavioral rule presence markers
 
-Each of the 6 original behavioral rules MUST be verifiable by the presence of specific string patterns in the restructured file:
+Each of the 7 behavioral rules (6 original + 1 codified from the coordinator's implicit non-coding role) MUST be verifiable by the presence of specific string patterns in the restructured file:
 
 | Rule | Required Pattern |
 |------|-----------------|
 | comms init | `comms_init` |
 | no file reservation | `NEVER` + `reserve` |
+| no code editing | `NEVER` + `edit code` |
 | review completions | `forge_review` |
 | store learnings | `hivemind_store` |
 | check inbox | `comms_inbox` |
@@ -69,7 +70,7 @@ Each of the 6 original behavioral rules MUST be verifiable by the presence of sp
 
 - **GIVEN** the restructured coordinator prompt
 - **WHEN** file content is searched for each required pattern in the table above
-- **THEN** all 6 patterns MUST be found in the file
+- **THEN** all 7 patterns MUST be found in the file
 
 ## MODIFIED Requirements
 
@@ -81,13 +82,13 @@ The coordinator's behavioral rules MUST be restructured into:
 1. A "Critical Constraints" section containing prohibitions and mandatory orderings (positioned first)
 2. A numbered "Protocol" section containing the ordered workflow steps
 
-The 6 original behavioral rules MUST remain with equivalent semantics. Additionally, the implicit `forge_review` → `forge_complete` ordering (present in the forge coordination skill but absent from the coordinator prompt) is made explicit — this is a codification of existing behavior, not a net-new rule.
+The 6 original behavioral rules MUST remain with equivalent semantics. Additionally, the implicit `forge_review` → `forge_complete` ordering (present in the forge coordination skill but absent from the coordinator prompt) and the `NEVER edit code directly` prohibition (implicit in the coordinator's non-coding orchestrator role) are made explicit — these are codifications of existing behavior, bringing the total to 7 verifiable rules.
 
 #### Scenario: Behavioral parity verification
 
-- **GIVEN** the original coordinator prompt contains 6 rules (comms init, no file reservation, review completions, store learnings, check inbox, broadcast context)
+- **GIVEN** the original coordinator prompt contains 6 rules (comms init, no file reservation, review completions, store learnings, check inbox, broadcast context) plus the implicit no-code-editing role
 - **WHEN** the restructured prompt is compared to the original
-- **THEN** all 6 rules MUST still be present (verified by pattern matching per FR-006), and the `forge_review` → `forge_complete` ordering MUST be explicitly stated
+- **THEN** all 7 rules MUST still be present (verified by pattern matching per FR-006), and the `forge_review` → `forge_complete` ordering MUST be explicitly stated
 
 ### FR-008: Coordinator prompt structure ordering
 
