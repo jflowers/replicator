@@ -16,7 +16,7 @@ The proposal (constitution-aligned, all principles PASS or N/A) calls for restru
 ### Non-Goals
 - Changing MCP tool behavior or adding new tools
 - Modifying Go source code
-- Adding tests (no testable behavior changes)
+- Adding tests for MCP tool behavior (structural tests for document shape are in scope per project convention)
 - Changing the agentkit embed mechanism
 - Restructuring other skills — this change targets forge-coordination only
 
@@ -46,7 +46,13 @@ The proposal (constitution-aligned, all principles PASS or N/A) calls for restru
 
 **Rationale**: First-position content in a section is the last thing compression removes. Burying MUST rules after descriptive text makes them candidates for trimming.
 
-### 5. Both files updated identically
+### 5. Worker Protocol expanded from 7 to 8 steps
+
+**Decision**: Insert an explicit "Release files" step (step 7) into the Worker Protocol and renumber "Complete" from step 7 to step 8.
+
+**Rationale**: The original 7-step protocol omitted an explicit file release step, relying on agents to infer cleanup. Making release explicit (a) ensures file reservations are freed before the completion signal and (b) positions the `comms_release` call at the point of use rather than as a separate rule to remember. This is an intentional behavioral modification that strengthens the protocol.
+
+### 6. Both files updated identically
 
 **Decision**: Both `internal/agentkit/content/skills/forge-coordination/SKILL.md` and `.opencode/skills/forge-coordination/SKILL.md` receive the same content.
 

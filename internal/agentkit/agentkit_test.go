@@ -8,6 +8,26 @@ import (
 	"testing"
 )
 
+// findRepoRoot walks up from the current working directory to find the
+// directory containing go.mod, which is the repository root.
+func findRepoRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("could not find repo root (no go.mod found)")
+		}
+		dir = parent
+	}
+}
+
 func TestScaffold_FreshDirectory(t *testing.T) {
 	dir := t.TempDir()
 	results, err := Scaffold(dir, false)
@@ -796,6 +816,91 @@ func TestForgeMD_StructuralHardening(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestForgeCoordinationSkill_StructuralHardening(t *testing.T) {
+	data, err := content.ReadFile("content/skills/forge-coordination/SKILL.md")
+	if err != nil {
+		t.Fatalf("read embedded forge-coordination SKILL.md: %v", err)
+	}
+	text := string(data)
+
+	// (1) Role-scoped section headers exist.
+	roleSections := []string{
+		"## Coordinator-Only Operations",
+		"## Worker-Only Operations",
+	}
+	for _, sec := range roleSections {
+		if !strings.Contains(text, sec) {
+			t.Errorf("forge-coordination SKILL.md: missing role-scoped section %q", sec)
+		}
+	}
+
+	// (2) MUST/MUST NOT rules appear before protocol steps in each role section.
+	coordinatorOpsIdx := strings.Index(text, "## Coordinator-Only Operations")
+	coordinatorProtocolIdx := strings.Index(text, "### Coordinator Protocol")
+	workerOpsIdx := strings.Index(text, "## Worker-Only Operations")
+	workerProtocolIdx := strings.Index(text, "### Worker Protocol")
+
+	if coordinatorOpsIdx < 0 || coordinatorProtocolIdx < 0 {
+		t.Fatal("forge-coordination SKILL.md: missing Coordinator sections")
+	}
+	if workerOpsIdx < 0 || workerProtocolIdx < 0 {
+		t.Fatal("forge-coordination SKILL.md: missing Worker sections")
+	}
+
+	// Coordinator MUST NOT rules must be between the section header and the protocol.
+	coordSection := text[coordinatorOpsIdx:coordinatorProtocolIdx]
+	coordMustRules := []string{
+		"MUST NOT reserve files",
+		"MUST NOT edit files directly",
+	}
+	for _, rule := range coordMustRules {
+		if !strings.Contains(coordSection, rule) {
+			t.Errorf("forge-coordination SKILL.md: coordinator MUST rule %q not found before Coordinator Protocol", rule)
+		}
+	}
+
+	// Worker MUST rules must be between the section header and the protocol.
+	workerSection := text[workerOpsIdx:workerProtocolIdx]
+	workerMustRules := []string{
+		"MUST reserve files before editing",
+		"MUST NOT call `comms_release_all()`",
+	}
+	for _, rule := range workerMustRules {
+		if !strings.Contains(workerSection, rule) {
+			t.Errorf("forge-coordination SKILL.md: worker MUST rule %q not found before Worker Protocol", rule)
+		}
+	}
+
+	// (3) exclusive=true appears in the comms_reserve call within Worker Protocol.
+	workerProtocolSection := text[workerProtocolIdx:]
+	if !strings.Contains(workerProtocolSection, "exclusive=true") {
+		t.Error("forge-coordination SKILL.md: Worker Protocol missing exclusive=true in comms_reserve call")
+	}
+
+	// (4) Removed sections from original document are absent.
+	removedSections := []string{
+		"## File Reservation Rules",
+		"## Conflict Resolution",
+	}
+	for _, sec := range removedSections {
+		if strings.Contains(text, sec) {
+			t.Errorf("forge-coordination SKILL.md: removed section %q should not be present", sec)
+		}
+	}
+
+	// (5) Both copies are byte-identical (embedded agentkit vs .opencode at repo root).
+	// Find repo root by walking up from the working directory to locate go.mod.
+	repoRoot := findRepoRoot(t)
+	opencodePath := filepath.Join(repoRoot, ".opencode", "skills", "forge-coordination", "SKILL.md")
+	opencodeCopy, err := os.ReadFile(opencodePath)
+	if err != nil {
+		t.Fatalf("read .opencode forge-coordination SKILL.md: %v", err)
+	}
+	if string(data) != string(opencodeCopy) {
+		t.Error("forge-coordination SKILL.md: embedded copy and .opencode copy are not byte-identical")
+	}
 }
 
 func TestSkillTemplates_HaveNameField(t *testing.T) {
