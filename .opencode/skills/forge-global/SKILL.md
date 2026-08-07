@@ -18,7 +18,7 @@ Patterns for forge coordination that apply across projects.
 
 ## File Reservation Protocol
 
-1. FIRST, workers MUST call `comms_reserve(paths=[...], ttl_seconds=300)` before editing any files — reservations are exclusive by default
+1. FIRST, workers MUST call `comms_reserve(paths=[...], ttl_seconds=300)` before editing any files (5-minute auto-release) — reservations are exclusive by default
 2. THEN, always release when done: `comms_release(paths=[...])`
 3. FINALLY, coordinator can emergency release if workers fail: `comms_release_all()`
 

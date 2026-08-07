@@ -10,7 +10,7 @@ Rules that apply to every coding session.
 
 ## Critical Safety
 
-- Never force push to main
+- NEVER force push to main
 
 ## Tool Usage Discipline
 
