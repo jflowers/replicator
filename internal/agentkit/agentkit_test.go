@@ -223,7 +223,7 @@ func TestCoordinatorPrompt_StructuralResilience(t *testing.T) {
 
 	text := string(data)
 
-	// --- YAML front matter validation ---
+	// Parse front matter and body once for all sub-tests.
 	if !strings.HasPrefix(text, "---\n") {
 		t.Fatal("coordinator.md: missing opening frontmatter delimiter")
 	}
@@ -232,86 +232,97 @@ func TestCoordinatorPrompt_StructuralResilience(t *testing.T) {
 		t.Fatal("coordinator.md: missing closing frontmatter delimiter")
 	}
 	frontmatter := text[4 : 4+endIdx]
-
-	fmChecks := []string{"name: coordinator", "mode: subagent", "description:"}
-	for _, want := range fmChecks {
-		if !strings.Contains(frontmatter, want) {
-			t.Errorf("frontmatter missing %q", want)
-		}
-	}
-
-	// Body is everything after the closing "---\n".
 	body := text[4+endIdx+4:] // skip past "\n---\n"
 
-	// --- Identity-first opening contains prohibition ---
-	// Find the first non-heading paragraph. Skip past the "# Heading"
-	// line and any blank lines to find the identity statement.
-	// Split into paragraphs (separated by blank lines) and find the
-	// first one that is not a heading.
-	paragraphs := strings.Split(body, "\n\n")
-	firstParagraph := ""
-	for _, p := range paragraphs {
-		trimmed := strings.TrimSpace(p)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		firstParagraph = trimmed
-		break
-	}
-	if firstParagraph == "" {
-		t.Fatal("coordinator.md: no non-heading paragraph found in body")
-	}
-	if !strings.Contains(firstParagraph, "NEVER") {
-		t.Error("first paragraph missing uppercase 'NEVER' keyword")
-	}
-	if !strings.Contains(strings.ToLower(firstParagraph), "reserve") {
-		t.Error("first paragraph missing file reservation prohibition ('reserve')")
-	}
-
-	// --- Section ordering: Critical Constraints before Protocol before Available Tools ---
+	// Pre-compute shared indices used by multiple sub-tests.
 	constraintsIdx := strings.Index(body, "## Critical Constraints")
 	protocolIdx := strings.Index(body, "## Protocol")
 	toolsIdx := strings.Index(body, "## Available Tools")
-
-	if constraintsIdx < 0 {
-		t.Error("missing '## Critical Constraints' section")
-	}
-	if protocolIdx < 0 {
-		t.Error("missing '## Protocol' section")
-	}
-	if toolsIdx < 0 {
-		t.Error("missing '## Available Tools' section")
-	}
-
-	if constraintsIdx >= 0 && protocolIdx >= 0 && constraintsIdx >= protocolIdx {
-		t.Error("'## Critical Constraints' must appear before '## Protocol'")
-	}
-	if protocolIdx >= 0 && toolsIdx >= 0 && protocolIdx >= toolsIdx {
-		t.Error("'## Protocol' must appear before '## Available Tools'")
-	}
-
-	// --- Behavioral rule markers: all 6 original rules must be present ---
-	ruleMarkers := map[string]string{
-		"comms_init":      "comms init rule",
-		"reserve":         "file reservation rule",
-		"forge_review":    "review completions rule",
-		"hivemind_store":  "store learnings rule",
-		"comms_inbox":     "check inbox rule",
-		"forge_broadcast": "broadcast context rule",
-	}
 	bodyLower := strings.ToLower(body)
-	for marker, desc := range ruleMarkers {
-		if !strings.Contains(bodyLower, strings.ToLower(marker)) {
-			t.Errorf("missing behavioral rule marker %q (%s)", marker, desc)
-		}
-	}
 
-	// --- Uppercase RFC 2119 keywords in constraints ---
 	constraintsSection := ""
 	if constraintsIdx >= 0 && protocolIdx >= 0 {
 		constraintsSection = body[constraintsIdx:protocolIdx]
 	}
-	if constraintsSection != "" {
+
+	t.Run("YAML_frontmatter", func(t *testing.T) {
+		fmChecks := []string{"name: coordinator", "mode: subagent", "description:"}
+		for _, want := range fmChecks {
+			if !strings.Contains(frontmatter, want) {
+				t.Errorf("frontmatter missing %q", want)
+			}
+		}
+	})
+
+	t.Run("identity_first_opening", func(t *testing.T) {
+		// Find the first non-heading paragraph after the heading.
+		paragraphs := strings.Split(body, "\n\n")
+		firstParagraph := ""
+		for _, p := range paragraphs {
+			trimmed := strings.TrimSpace(p)
+			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+				continue
+			}
+			firstParagraph = trimmed
+			break
+		}
+		if firstParagraph == "" {
+			t.Fatal("coordinator.md: no non-heading paragraph found in body")
+		}
+		if !strings.Contains(firstParagraph, "NEVER") {
+			t.Error("first paragraph missing uppercase 'NEVER' keyword")
+		}
+		if !strings.Contains(strings.ToLower(firstParagraph), "reserve") {
+			t.Error("first paragraph missing file reservation prohibition ('reserve')")
+		}
+	})
+
+	t.Run("section_ordering", func(t *testing.T) {
+		if constraintsIdx < 0 {
+			t.Error("missing '## Critical Constraints' section")
+		}
+		if protocolIdx < 0 {
+			t.Error("missing '## Protocol' section")
+		}
+		if toolsIdx < 0 {
+			t.Error("missing '## Available Tools' section")
+		}
+
+		if constraintsIdx >= 0 && protocolIdx >= 0 && constraintsIdx >= protocolIdx {
+			t.Error("'## Critical Constraints' must appear before '## Protocol'")
+		}
+		if protocolIdx >= 0 && toolsIdx >= 0 && protocolIdx >= toolsIdx {
+			t.Error("'## Protocol' must appear before '## Available Tools'")
+		}
+	})
+
+	t.Run("behavioral_rule_markers", func(t *testing.T) {
+		// All 7 behavioral rules (6 original + 1 codified) must be present (FR-006).
+		// Use a slice for deterministic iteration order.
+		type ruleCheck struct {
+			marker string
+			desc   string
+		}
+		checks := []ruleCheck{
+			{"comms_init", "comms init rule"},
+			{"reserve", "file reservation rule"},
+			{"edit code", "code editing prohibition rule"},
+			{"forge_review", "review completions rule"},
+			{"hivemind_store", "store learnings rule"},
+			{"comms_inbox", "check inbox rule"},
+			{"forge_broadcast", "broadcast context rule"},
+		}
+		for _, rc := range checks {
+			if !strings.Contains(bodyLower, strings.ToLower(rc.marker)) {
+				t.Errorf("missing behavioral rule marker %q (%s)", rc.marker, rc.desc)
+			}
+		}
+	})
+
+	t.Run("uppercase_RFC2119_keywords", func(t *testing.T) {
+		if constraintsSection == "" {
+			t.Skip("no constraints section found")
+		}
 		if !strings.Contains(constraintsSection, "NEVER") {
 			t.Error("Critical Constraints section missing uppercase 'NEVER' keyword")
 		}
@@ -329,38 +340,60 @@ func TestCoordinatorPrompt_StructuralResilience(t *testing.T) {
 				}
 			}
 		}
-	}
+	})
 
-	// --- FR-003: Explicit review-before-complete ordering ---
-	if !strings.Contains(body, "BEFORE") ||
-		!strings.Contains(body, "forge_review") ||
-		!strings.Contains(body, "forge_complete") {
-		t.Error("missing explicit ordering: forge_review BEFORE forge_complete (FR-003)")
-	}
-	// Verify forge_review appears before forge_complete in constraints section.
-	if constraintsSection != "" {
+	t.Run("review_before_complete_ordering", func(t *testing.T) {
+		// FR-003: forge_review MUST be called BEFORE forge_complete.
+		if constraintsSection == "" {
+			t.Skip("no constraints section found")
+		}
+		// Verify each required element is present individually.
+		if !strings.Contains(body, "forge_review") {
+			t.Error("missing forge_review reference in body")
+		}
+		if !strings.Contains(body, "forge_complete") {
+			t.Error("missing forge_complete reference in body")
+		}
+		// Verify the constraint line containing forge_review also mentions
+		// forge_complete with explicit ordering language (BEFORE), confirming
+		// the ordering is stated in a single rule rather than inferred from
+		// unrelated occurrences of "BEFORE".
+		foundOrderingRule := false
+		for _, line := range strings.Split(constraintsSection, "\n") {
+			if strings.Contains(line, "forge_review") &&
+				strings.Contains(line, "forge_complete") &&
+				strings.Contains(line, "BEFORE") {
+				foundOrderingRule = true
+				break
+			}
+		}
+		if !foundOrderingRule {
+			t.Error("no single constraint line connects forge_review, BEFORE, and forge_complete (FR-003)")
+		}
+		// Verify forge_review appears before forge_complete in constraints section.
 		reviewIdx := strings.Index(constraintsSection, "forge_review")
 		completeIdx := strings.Index(constraintsSection, "forge_complete")
 		if reviewIdx >= 0 && completeIdx >= 0 && reviewIdx >= completeIdx {
 			t.Error("forge_review must appear before forge_complete in Critical Constraints")
 		}
-	}
+	})
 
-	// --- Compression resilience: first 50% of body lines contain critical constraints ---
-	bodyLines := strings.Split(body, "\n")
-	halfLen := len(bodyLines) / 2
-	firstHalf := strings.Join(bodyLines[:halfLen], "\n")
-	firstHalfLower := strings.ToLower(firstHalf)
+	t.Run("compression_resilience", func(t *testing.T) {
+		bodyLines := strings.Split(body, "\n")
+		halfLen := len(bodyLines) / 2
+		firstHalf := strings.Join(bodyLines[:halfLen], "\n")
+		firstHalfLower := strings.ToLower(firstHalf)
 
-	if !strings.Contains(firstHalf, "NEVER") || !strings.Contains(firstHalfLower, "reserve") {
-		t.Error("first 50%% of body lines must contain file reservation prohibition (NEVER + reserve)")
-	}
-	if !strings.Contains(firstHalfLower, "forge_review") || !strings.Contains(firstHalfLower, "forge_complete") {
-		t.Error("first 50%% of body lines must contain review-before-complete ordering (forge_review + forge_complete)")
-	}
-	if !strings.Contains(firstHalfLower, "edit code") {
-		t.Error("first 50%% of body lines must contain code editing prohibition ('edit code')")
-	}
+		if !strings.Contains(firstHalf, "NEVER") || !strings.Contains(firstHalfLower, "reserve") {
+			t.Error("first 50%% of body lines must contain file reservation prohibition (NEVER + reserve)")
+		}
+		if !strings.Contains(firstHalfLower, "forge_review") || !strings.Contains(firstHalfLower, "forge_complete") {
+			t.Error("first 50%% of body lines must contain review-before-complete ordering (forge_review + forge_complete)")
+		}
+		if !strings.Contains(firstHalfLower, "edit code") {
+			t.Error("first 50%% of body lines must contain code editing prohibition ('edit code')")
+		}
+	})
 }
 
 func TestSkillTemplates_HaveNameField(t *testing.T) {
