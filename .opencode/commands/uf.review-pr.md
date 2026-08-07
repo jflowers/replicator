@@ -865,15 +865,16 @@ Use the **AskUserQuestion tool** with options
 ### 7. Offer Verdict-aligned PR Review
 
 After presenting the review, if there are findings with
-severity HIGH or above, offer to post them as a formal
-GitHub review on the PR:
+severity HIGH or above, show the following framing text:
 
 ```
 I found <N> findings (X CRITICAL, Y HIGH).
 Verdict: <APPROVE / REQUEST CHANGES / COMMENT>
 ```
 
-Use the **AskUserQuestion tool** with options
+Regardless of finding severities, always offer to post
+the review as a formal GitHub review on the PR. Use the
+**AskUserQuestion tool** with options
 `["Yes -- post as GitHub review", "No -- terminal
 summary is sufficient"]`.
 
