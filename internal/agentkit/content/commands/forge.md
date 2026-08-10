@@ -11,7 +11,7 @@ Decompose a task and spawn parallel workers.
 These rules are non-negotiable and MUST NOT be skipped:
 
 - **Review MUST complete before marking work done** — step 7 (review) MUST finish before step 8 (complete). NEVER skip review.
-- **NEVER pass `skip_review: true` to `forge_complete`** — the review gate exists to catch broken work before it is marked done.
+- **The review gate is mandatory** — `forge_complete` MUST NOT be called until `forge_review` has passed for every worker. NEVER bypass the review gate.
 - ALWAYS create a forge, even for small tasks.
 - Coordinator orchestrates, workers execute — workers MUST NOT call `forge_complete`.
 
@@ -44,7 +44,7 @@ $ARGUMENTS
 
 - Review every worker's output before marking complete — NEVER skip this step
 - ALWAYS create a forge, even for small tasks
-- Coordinator orchestrates, workers execute
+- Coordinator orchestrates, workers execute — workers MUST NOT call `forge_complete`
 - Workers reserve their own files via `comms_reserve`
 - Check inbox regularly for blocked workers
 - Store learnings after completion

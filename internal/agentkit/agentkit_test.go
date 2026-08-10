@@ -566,17 +566,22 @@ func TestForgeMD_StructuralHardening(t *testing.T) {
 		}
 	})
 
-	// Scenario 3: skip_review prohibition is present in Critical Invariants.
-	t.Run("SkipReviewProhibition", func(t *testing.T) {
+	// Scenario 3: Review gate mandatory constraint is present in Critical Invariants.
+	t.Run("ReviewGateMandatory", func(t *testing.T) {
 		section := sectionContent("## Critical Invariants")
 		if section == "" {
 			t.Fatal("Critical Invariants section not found")
 		}
-		if !strings.Contains(section, "skip_review") {
-			t.Error("Critical Invariants must contain skip_review prohibition")
+		// The review gate must be stated as a positive constraint (not naming bypass parameters).
+		if !strings.Contains(section, "MUST NOT") {
+			t.Error("Critical Invariants must use MUST NOT for review gate constraint")
 		}
 		if !strings.Contains(section, "NEVER") {
-			t.Error("Critical Invariants must use NEVER for skip_review prohibition")
+			t.Error("Critical Invariants must use NEVER for review gate constraint")
+		}
+		lower := strings.ToLower(section)
+		if !strings.Contains(lower, "review gate") {
+			t.Error("Critical Invariants must reference 'review gate' as mandatory")
 		}
 	})
 

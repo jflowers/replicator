@@ -20,7 +20,7 @@ Restructure `forge.md` to survive DCP context compression by applying prompt har
 
 ### New Capabilities
 
-- `skip_review: true` prohibition added to Critical Invariants — prevents agents from bypassing the review gate via `forge_complete` parameter
+- Review gate mandatory constraint added to Critical Invariants — states the review gate is non-negotiable using positive constraint language (avoids naming bypass parameters)
 
 ### Modified Capabilities
 
