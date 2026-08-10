@@ -581,7 +581,7 @@ func TestForgeMD_StructuralHardening(t *testing.T) {
 	})
 
 	// Scenario 4: Review-before-complete constraint has redundant placement
-	// (present in both Critical Invariants AND at least one other section).
+	// (present in ALL THREE sections: Critical Invariants, Workflow, and Rules).
 	t.Run("RedundantReviewConstraint", func(t *testing.T) {
 		invariants := sectionContent("## Critical Invariants")
 		workflow := sectionContent("## Workflow")
@@ -598,8 +598,11 @@ func TestForgeMD_StructuralHardening(t *testing.T) {
 		if !inInvariants {
 			t.Error("review-before-complete not found in Critical Invariants")
 		}
-		if !inWorkflow && !inRules {
-			t.Error("review-before-complete must appear in at least one section beyond Critical Invariants")
+		if !inWorkflow {
+			t.Error("review-before-complete not found in Workflow section")
+		}
+		if !inRules {
+			t.Error("review-before-complete not found in Rules section")
 		}
 	})
 
@@ -660,6 +663,131 @@ func TestForgeMD_StructuralHardening(t *testing.T) {
 		for _, heading := range prohibited {
 			if findHeading(heading) >= 0 {
 				t.Errorf("found prohibited standalone section: %s", heading)
+			}
+		}
+	})
+
+	// Scenario 8: Strategy selection content is inlined within step 3 (Decompose).
+	t.Run("StrategyInlinedInStep3", func(t *testing.T) {
+		workflow := sectionContent("## Workflow")
+		if workflow == "" {
+			t.Fatal("Workflow section not found")
+		}
+		// Find step 3 and its sub-items (lines between "3." and the next step "4.").
+		wfLines := strings.Split(workflow, "\n")
+		var step3Content strings.Builder
+		inStep3 := false
+		for _, line := range wfLines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "3.") {
+				inStep3 = true
+			} else if inStep3 && len(trimmed) > 0 && trimmed[0] >= '1' && trimmed[0] <= '9' && len(trimmed) > 1 && trimmed[1] == '.' {
+				break
+			}
+			if inStep3 {
+				step3Content.WriteString(line)
+				step3Content.WriteString("\n")
+			}
+		}
+		s3 := step3Content.String()
+		if !strings.Contains(s3, "forge_get_strategy_insights") {
+			t.Error("Step 3 must contain forge_get_strategy_insights (strategy selection inlined)")
+		}
+		if !strings.Contains(s3, "forge_decompose") {
+			t.Error("Step 3 must contain forge_decompose")
+		}
+	})
+
+	// Scenario 9: Error recovery content is inlined within step 6 (Monitor).
+	t.Run("ErrorRecoveryInlinedInStep6", func(t *testing.T) {
+		workflow := sectionContent("## Workflow")
+		if workflow == "" {
+			t.Fatal("Workflow section not found")
+		}
+		wfLines := strings.Split(workflow, "\n")
+		var step6Content strings.Builder
+		inStep6 := false
+		for _, line := range wfLines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "6.") {
+				inStep6 = true
+			} else if inStep6 && len(trimmed) > 0 && trimmed[0] >= '1' && trimmed[0] <= '9' && len(trimmed) > 1 && trimmed[1] == '.' {
+				break
+			}
+			if inStep6 {
+				step6Content.WriteString(line)
+				step6Content.WriteString("\n")
+			}
+		}
+		s6 := step6Content.String()
+		lower := strings.ToLower(s6)
+		if !strings.Contains(lower, "blocked") {
+			t.Error("Step 6 must contain blocked-worker recovery guidance")
+		}
+		if !strings.Contains(lower, "unblock") && !strings.Contains(lower, "reassign") {
+			t.Error("Step 6 must contain recovery action (unblock or reassign)")
+		}
+	})
+
+	// Scenario 10: Completion sub-steps are inlined within step 8.
+	t.Run("CompletionInlinedInStep8", func(t *testing.T) {
+		workflow := sectionContent("## Workflow")
+		if workflow == "" {
+			t.Fatal("Workflow section not found")
+		}
+		wfLines := strings.Split(workflow, "\n")
+		var step8Content strings.Builder
+		inStep8 := false
+		for _, line := range wfLines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "8.") {
+				inStep8 = true
+			} else if inStep8 && len(trimmed) > 0 && trimmed[0] >= '1' && trimmed[0] <= '9' && len(trimmed) > 1 && trimmed[1] == '.' {
+				break
+			}
+			if inStep8 {
+				step8Content.WriteString(line)
+				step8Content.WriteString("\n")
+			}
+		}
+		s8 := step8Content.String()
+		required := []string{
+			"forge_complete",
+			"forge_record_outcome",
+			"hivemind_store",
+			"org_sync",
+		}
+		for _, tool := range required {
+			if !strings.Contains(s8, tool) {
+				t.Errorf("Step 8 must contain %s (completion sub-step)", tool)
+			}
+		}
+	})
+
+	// Scenario 11: All MCP tool references from the forge workflow are present.
+	t.Run("AllToolReferencesPresent", func(t *testing.T) {
+		allTools := []string{
+			"comms_init",
+			"hivemind_find",
+			"forge_decompose",
+			"forge_get_strategy_insights",
+			"org_create_epic",
+			"forge_spawn_subtask",
+			"comms_inbox",
+			"forge_status",
+			"org_cells",
+			"comms_read_message",
+			"comms_ack",
+			"forge_review",
+			"forge_complete",
+			"forge_record_outcome",
+			"hivemind_store",
+			"org_sync",
+			"comms_reserve",
+		}
+		for _, tool := range allTools {
+			if !strings.Contains(text, tool) {
+				t.Errorf("forge.md missing MCP tool reference: %s", tool)
 			}
 		}
 	})
