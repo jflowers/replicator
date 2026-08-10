@@ -43,7 +43,7 @@ $ARGUMENTS
 ## Rules
 
 - Review every worker's output before marking complete — NEVER skip this step
-- Always create a forge, even for small tasks
+- ALWAYS create a forge, even for small tasks
 - Coordinator orchestrates, workers execute
 - Workers reserve their own files via `comms_reserve`
 - Check inbox regularly for blocked workers

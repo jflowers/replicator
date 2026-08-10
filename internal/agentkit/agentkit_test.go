@@ -609,20 +609,25 @@ func TestForgeMD_StructuralHardening(t *testing.T) {
 		if workflow == "" {
 			t.Fatal("Workflow section not found")
 		}
-		// Find step 7 line.
-		hasStep7Constraint := false
+		// Find step 7 line — require MUST AND an ordering signal.
+		var foundStep7 bool
 		for _, line := range strings.Split(workflow, "\n") {
 			if strings.HasPrefix(strings.TrimSpace(line), "7.") {
+				foundStep7 = true
 				lower := strings.ToLower(line)
-				if strings.Contains(lower, "first") || strings.Contains(lower, "before step 8") ||
-					strings.Contains(line, "MUST") {
-					hasStep7Constraint = true
+				hasMust := strings.Contains(line, "MUST")
+				hasOrdering := strings.Contains(lower, "first") || strings.Contains(lower, "before step 8")
+				if !hasMust {
+					t.Error("Step 7 must use RFC 2119 MUST language")
+				}
+				if !hasOrdering {
+					t.Error("Step 7 must contain ordering signal (FIRST or 'before step 8')")
 				}
 				break
 			}
 		}
-		if !hasStep7Constraint {
-			t.Error("Step 7 must contain explicit ordering constraint (FIRST/before step 8/MUST)")
+		if !foundStep7 {
+			t.Error("Step 7 not found in Workflow section")
 		}
 	})
 

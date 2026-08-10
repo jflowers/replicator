@@ -35,7 +35,7 @@ Restructure `forge.md` to survive DCP context compression by applying prompt har
 - **File**: `internal/agentkit/content/commands/forge.md` (single file change)
 - **Behavioral**: No change to forge workflow semantics -- agents follow the same steps in the same order
 - **Risk**: Low -- restructuring prompt text only, no code changes
-- **Testing**: Existing parity tests continue to pass (forge.md is embedded content, not tested directly). Manual verification that the restructured prompt reads correctly and maintains all original content.
+- **Testing**: Existing parity tests continue to pass. `TestForgeMD_StructuralHardening` verifies structural invariants (section ordering, redundant constraint placement, prohibited standalone sections) via 7 subtests against the embedded forge.md content.
 
 ## Constitution Alignment
 
@@ -61,6 +61,6 @@ The change strengthens observable quality by ensuring the review step (which val
 
 ### IV. Testability
 
-**Assessment**: N/A
+**Assessment**: PASS
 
-No testable components are added or modified. The change is to embedded prompt content. Existing parity tests and build verification continue to apply.
+`TestForgeMD_StructuralHardening` (7 subtests) validates structural invariants of the embedded forge.md content: section ordering, constraint presence, redundant placement, and absence of prohibited standalone sections. Tests use in-memory embedded filesystem — no external services required.
