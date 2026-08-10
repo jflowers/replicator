@@ -29,8 +29,8 @@ Restructure the `forge-coordination` skill to survive DCP context compression by
 - **File**: `internal/agentkit/content/skills/forge-coordination/SKILL.md` (embedded agentkit copy)
 - **File**: `.opencode/skills/forge-coordination/SKILL.md` (opencode skills copy)
 - Both files must stay in sync — they are currently identical
-- No behavioral changes to MCP tools or Go code
-- No test changes required — this is a prompt/documentation hardening change
+- The Worker Protocol is expanded from 7 to 8 steps (explicit "Release files" step added as step 7; see design decision D5) — this is an intentional behavioral modification to the protocol, not a Go code or MCP tool change
+- A structural test (`TestForgeCoordinationSkill_StructuralHardening`) validates compression-critical patterns survive editing
 - Agents loading this skill will receive compression-resistant constraints
 
 ## Constitution Alignment
