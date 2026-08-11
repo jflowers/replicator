@@ -30,4 +30,5 @@
 - [x] 4.2 Run `make check-coverage` — coverage ratchets pass
 - [x] 4.3 Verify constitution alignment: Autonomous Collaboration (tools remain independently callable), Composability First (graceful degradation preserved), Observable Quality (JSON response shapes unchanged), Testability (all tests use `httptest`, no external services, `-race` passes)
 - [x] 4.4 Update `AGENTS.md` project structure to include `internal/mcpclient/` package description
+<!-- code-review: passed -->
 <!-- scaffolded by uf vdev -->
