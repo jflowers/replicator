@@ -3,46 +3,129 @@ package memory
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
-	"time"
 )
 
-// newTestServer creates an httptest server that responds to JSON-RPC calls.
-// The handler function receives the method and params and returns a result.
-func newTestServer(t *testing.T, handler func(method string, params json.RawMessage) (any, *jsonRPCError)) *httptest.Server {
-	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req jsonRPCRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad request", http.StatusBadRequest)
+// mcpMockHandler is a stateful mock MCP server for testing the memory proxy.
+// It simulates MCP Streamable HTTP transport: initialize handshake, session ID,
+// tools/call envelope validation, and SSE response format.
+type mcpMockHandler struct {
+	t *testing.T
+
+	mu          sync.Mutex
+	initialized bool
+
+	// toolHandler receives the tool name and raw arguments, returns a result.
+	toolHandler func(name string, args json.RawMessage) (any, error)
+}
+
+func (h *mcpMockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var req map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request body", http.StatusBadRequest)
+		return
+	}
+
+	method, _ := req["method"].(string)
+
+	switch method {
+	case "initialize":
+		h.handleInitialize(w, req)
+	case "tools/call":
+		h.handleToolsCall(w, req)
+	default:
+		// Reject bare JSON-RPC methods (non-MCP) with 400.
+		http.Error(w, fmt.Sprintf("unknown method %q: MCP requires initialize + tools/call", method), http.StatusBadRequest)
+	}
+}
+
+func (h *mcpMockHandler) handleInitialize(w http.ResponseWriter, req map[string]any) {
+	h.mu.Lock()
+	h.initialized = true
+	h.mu.Unlock()
+
+	result := map[string]any{
+		"protocolVersion": "2025-03-26",
+		"capabilities":   map[string]any{},
+		"serverInfo": map[string]any{
+			"name":    "mock-dewey",
+			"version": "1.0.0",
+		},
+	}
+
+	rpcResp := map[string]any{
+		"jsonrpc": "2.0",
+		"id":      req["id"],
+		"result":  result,
+	}
+
+	w.Header().Set("Mcp-Session-Id", "mock-session-id")
+	data, _ := json.Marshal(rpcResp)
+	w.Header().Set("Content-Type", "text/event-stream")
+	fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
+}
+
+func (h *mcpMockHandler) handleToolsCall(w http.ResponseWriter, req map[string]any) {
+	params, _ := req["params"].(map[string]any)
+	toolName, _ := params["name"].(string)
+	argsRaw, _ := json.Marshal(params["arguments"])
+
+	var toolResult any
+	if h.toolHandler != nil {
+		var err error
+		toolResult, err = h.toolHandler(toolName, argsRaw)
+		if err != nil {
+			rpcResp := map[string]any{
+				"jsonrpc": "2.0",
+				"id":      req["id"],
+				"error": map[string]any{
+					"code":    -32600,
+					"message": err.Error(),
+				},
+			}
+			data, _ := json.Marshal(rpcResp)
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
 			return
 		}
+	} else {
+		toolResult = map[string]string{"status": "ok"}
+	}
 
-		paramsBytes, _ := json.Marshal(req.Params)
-		result, rpcErr := handler(req.Method, paramsBytes)
+	resultJSON, _ := json.Marshal(toolResult)
+	rpcResp := map[string]any{
+		"jsonrpc": "2.0",
+		"id":      req["id"],
+		"result": map[string]any{
+			"content": []map[string]any{
+				{"type": "text", "text": string(resultJSON)},
+			},
+		},
+	}
 
-		resp := jsonRPCResponse{
-			JSONRPC: "2.0",
-			ID:      req.ID,
-		}
-		if rpcErr != nil {
-			resp.Error = rpcErr
-		} else {
-			resp.Result, _ = json.Marshal(result)
-		}
+	data, _ := json.Marshal(rpcResp)
+	w.Header().Set("Content-Type", "text/event-stream")
+	fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
+}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
-	}))
+// newMCPTestServer creates a test server with the MCP mock handler.
+func newMCPTestServer(t *testing.T, handler func(name string, args json.RawMessage) (any, error)) *httptest.Server {
+	t.Helper()
+	h := &mcpMockHandler{t: t, toolHandler: handler}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	return srv
 }
 
 func TestCall_Success(t *testing.T) {
-	srv := newTestServer(t, func(method string, params json.RawMessage) (any, *jsonRPCError) {
+	srv := newMCPTestServer(t, func(name string, args json.RawMessage) (any, error) {
 		return map[string]string{"status": "ok"}, nil
 	})
-	defer srv.Close()
 
 	client := NewClient(srv.URL)
 	result, err := client.Call("test_method", map[string]string{"key": "value"})
@@ -60,18 +143,17 @@ func TestCall_Success(t *testing.T) {
 }
 
 func TestCall_RPCError(t *testing.T) {
-	srv := newTestServer(t, func(method string, params json.RawMessage) (any, *jsonRPCError) {
-		return nil, &jsonRPCError{Code: -32600, Message: "invalid request"}
+	srv := newMCPTestServer(t, func(name string, args json.RawMessage) (any, error) {
+		return nil, fmt.Errorf("invalid request")
 	})
-	defer srv.Close()
 
 	client := NewClient(srv.URL)
 	_, err := client.Call("test_method", nil)
 	if err == nil {
 		t.Fatal("expected error for RPC error response")
 	}
-	if got := err.Error(); got != "dewey error -32600: invalid request" {
-		t.Errorf("error = %q, want dewey error message", got)
+	if !strings.Contains(err.Error(), "invalid request") {
+		t.Errorf("error = %q, should mention invalid request", err.Error())
 	}
 }
 
@@ -108,13 +190,12 @@ func TestCall_HTTPError(t *testing.T) {
 }
 
 func TestHealth_Success(t *testing.T) {
-	srv := newTestServer(t, func(method string, params json.RawMessage) (any, *jsonRPCError) {
-		if method != "dewey_health" {
-			t.Errorf("method = %q, want %q", method, "dewey_health")
+	srv := newMCPTestServer(t, func(name string, args json.RawMessage) (any, error) {
+		if name != "dewey_health" {
+			t.Errorf("tool name = %q, want %q", name, "dewey_health")
 		}
 		return map[string]string{"status": "healthy"}, nil
 	})
-	defer srv.Close()
 
 	client := NewClient(srv.URL)
 	if err := client.Health(); err != nil {
@@ -131,13 +212,13 @@ func TestHealth_Failure(t *testing.T) {
 }
 
 func TestStore_Success(t *testing.T) {
-	srv := newTestServer(t, func(method string, params json.RawMessage) (any, *jsonRPCError) {
-		if method != "store_learning" {
-			t.Errorf("method = %q, want %q", method, "store_learning")
+	srv := newMCPTestServer(t, func(name string, args json.RawMessage) (any, error) {
+		if name != "store_learning" {
+			t.Errorf("tool name = %q, want %q", name, "store_learning")
 		}
 
 		var p map[string]string
-		json.Unmarshal(params, &p)
+		json.Unmarshal(args, &p)
 		if p["information"] != "test learning" {
 			t.Errorf("information = %q, want %q", p["information"], "test learning")
 		}
@@ -147,7 +228,6 @@ func TestStore_Success(t *testing.T) {
 
 		return map[string]any{"id": "mem-123", "stored": true}, nil
 	})
-	defer srv.Close()
 
 	client := NewClient(srv.URL)
 	result, err := client.Store("test learning", "go,testing")
@@ -165,13 +245,12 @@ func TestStore_Success(t *testing.T) {
 }
 
 func TestStore_NoTags(t *testing.T) {
-	var receivedParams map[string]any
+	var receivedArgs json.RawMessage
 
-	srv := newTestServer(t, func(method string, params json.RawMessage) (any, *jsonRPCError) {
-		json.Unmarshal(params, &receivedParams)
+	srv := newMCPTestServer(t, func(name string, args json.RawMessage) (any, error) {
+		receivedArgs = args
 		return map[string]any{"stored": true}, nil
 	})
-	defer srv.Close()
 
 	client := NewClient(srv.URL)
 	_, err := client.Store("info only", "")
@@ -179,7 +258,9 @@ func TestStore_NoTags(t *testing.T) {
 		t.Fatalf("Store: %v", err)
 	}
 
-	if _, hasTags := receivedParams["tags"]; hasTags {
+	var params map[string]any
+	json.Unmarshal(receivedArgs, &params)
+	if _, hasTags := params["tags"]; hasTags {
 		t.Error("tags should not be sent when empty")
 	}
 }
@@ -198,13 +279,13 @@ func TestStore_DeweyUnavailable(t *testing.T) {
 }
 
 func TestFind_Success(t *testing.T) {
-	srv := newTestServer(t, func(method string, params json.RawMessage) (any, *jsonRPCError) {
-		if method != "semantic_search" {
-			t.Errorf("method = %q, want %q", method, "semantic_search")
+	srv := newMCPTestServer(t, func(name string, args json.RawMessage) (any, error) {
+		if name != "semantic_search" {
+			t.Errorf("tool name = %q, want %q", name, "semantic_search")
 		}
 
 		var p map[string]any
-		json.Unmarshal(params, &p)
+		json.Unmarshal(args, &p)
 		if p["query"] != "test query" {
 			t.Errorf("query = %v, want %q", p["query"], "test query")
 		}
@@ -215,7 +296,6 @@ func TestFind_Success(t *testing.T) {
 			},
 		}, nil
 	})
-	defer srv.Close()
 
 	client := NewClient(srv.URL)
 	result, err := client.Find("test query", "", 5)
@@ -229,13 +309,12 @@ func TestFind_Success(t *testing.T) {
 }
 
 func TestFind_WithCollection(t *testing.T) {
-	var receivedParams map[string]any
+	var receivedArgs json.RawMessage
 
-	srv := newTestServer(t, func(method string, params json.RawMessage) (any, *jsonRPCError) {
-		json.Unmarshal(params, &receivedParams)
+	srv := newMCPTestServer(t, func(name string, args json.RawMessage) (any, error) {
+		receivedArgs = args
 		return map[string]any{"results": []any{}}, nil
 	})
-	defer srv.Close()
 
 	client := NewClient(srv.URL)
 	_, err := client.Find("query", "learnings", 10)
@@ -243,19 +322,20 @@ func TestFind_WithCollection(t *testing.T) {
 		t.Fatalf("Find: %v", err)
 	}
 
-	if receivedParams["source_type"] != "learnings" {
-		t.Errorf("source_type = %v, want %q", receivedParams["source_type"], "learnings")
+	var params map[string]any
+	json.Unmarshal(receivedArgs, &params)
+	if params["source_type"] != "learnings" {
+		t.Errorf("source_type = %v, want %q", params["source_type"], "learnings")
 	}
 }
 
 func TestFind_WithLimit(t *testing.T) {
-	var receivedParams map[string]any
+	var receivedArgs json.RawMessage
 
-	srv := newTestServer(t, func(method string, params json.RawMessage) (any, *jsonRPCError) {
-		json.Unmarshal(params, &receivedParams)
+	srv := newMCPTestServer(t, func(name string, args json.RawMessage) (any, error) {
+		receivedArgs = args
 		return map[string]any{"results": []any{}}, nil
 	})
-	defer srv.Close()
 
 	client := NewClient(srv.URL)
 	_, err := client.Find("query", "", 7)
@@ -263,20 +343,21 @@ func TestFind_WithLimit(t *testing.T) {
 		t.Fatalf("Find: %v", err)
 	}
 
+	var params map[string]any
+	json.Unmarshal(receivedArgs, &params)
 	// JSON numbers unmarshal as float64.
-	if receivedParams["limit"] != float64(7) {
-		t.Errorf("limit = %v, want 7", receivedParams["limit"])
+	if params["limit"] != float64(7) {
+		t.Errorf("limit = %v, want 7", params["limit"])
 	}
 }
 
 func TestFind_ZeroLimit(t *testing.T) {
-	var receivedParams map[string]any
+	var receivedArgs json.RawMessage
 
-	srv := newTestServer(t, func(method string, params json.RawMessage) (any, *jsonRPCError) {
-		json.Unmarshal(params, &receivedParams)
+	srv := newMCPTestServer(t, func(name string, args json.RawMessage) (any, error) {
+		receivedArgs = args
 		return map[string]any{"results": []any{}}, nil
 	})
-	defer srv.Close()
 
 	client := NewClient(srv.URL)
 	_, err := client.Find("query", "", 0)
@@ -284,7 +365,9 @@ func TestFind_ZeroLimit(t *testing.T) {
 		t.Fatalf("Find: %v", err)
 	}
 
-	if _, hasLimit := receivedParams["limit"]; hasLimit {
+	var params map[string]any
+	json.Unmarshal(receivedArgs, &params)
+	if _, hasLimit := params["limit"]; hasLimit {
 		t.Error("limit should not be sent when zero")
 	}
 }
@@ -311,9 +394,30 @@ func TestUnavailableResponse(t *testing.T) {
 	}
 }
 
-func TestNewClient_Timeout(t *testing.T) {
-	client := NewClient("http://example.com")
-	if client.http.Timeout != 10*time.Second {
-		t.Errorf("timeout = %v, want 10s", client.http.Timeout)
+// TestCall_RejectsBareMethods verifies that the mock MCP server rejects bare
+// JSON-RPC methods (the old behavior) and the new MCP transport succeeds.
+// This is the regression test for issue #19.
+func TestCall_RejectsBareMethods(t *testing.T) {
+	srv := newMCPTestServer(t, func(name string, args json.RawMessage) (any, error) {
+		return map[string]string{"status": "ok"}, nil
+	})
+
+	// The new client wraps in tools/call, so it should succeed.
+	client := NewClient(srv.URL)
+	_, err := client.Call("dewey_health", map[string]any{})
+	if err != nil {
+		t.Fatalf("MCP client should succeed: %v", err)
+	}
+
+	// Verify the mock rejects bare methods by sending a raw non-MCP request.
+	bareReq := `{"jsonrpc":"2.0","method":"dewey_health","params":{},"id":1}`
+	resp, err := http.Post(srv.URL, "application/json", strings.NewReader(bareReq))
+	if err != nil {
+		t.Fatalf("bare request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("bare method should be rejected with 400, got %d", resp.StatusCode)
 	}
 }

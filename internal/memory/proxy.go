@@ -1,102 +1,47 @@
 // Package memory provides a Dewey HTTP proxy client for semantic memory operations.
 //
 // The hivemind_store and hivemind_find tools proxy to Dewey's semantic search
-// endpoints via JSON-RPC 2.0 over HTTP. Six secondary tools return deprecation
-// messages pointing users to native Dewey tools.
+// endpoints via MCP Streamable HTTP transport. Six secondary tools return
+// deprecation messages pointing users to native Dewey tools.
 //
 // On connection failure, errors include a structured "DEWEY_UNAVAILABLE" code
 // so agents can degrade gracefully.
 package memory
 
 import (
-	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"time"
+
+	"github.com/unbound-force/replicator/internal/mcpclient"
 )
 
-// Client is a Dewey HTTP proxy that forwards JSON-RPC calls.
+// Client is a Dewey HTTP proxy that forwards MCP tools/call requests.
 type Client struct {
-	url  string
-	http *http.Client
+	mcp *mcpclient.Client
 }
 
 // NewClient creates a Dewey proxy client with a 10-second timeout.
 func NewClient(deweyURL string) *Client {
 	return &Client{
-		url: deweyURL,
-		http: &http.Client{
+		mcp: mcpclient.New(deweyURL, mcpclient.Config{
+			Name:    "replicator-memory",
+			Version: "1.0.0",
 			Timeout: 10 * time.Second,
-		},
+		}),
 	}
 }
 
-// jsonRPCRequest is a JSON-RPC 2.0 request envelope.
-type jsonRPCRequest struct {
-	JSONRPC string `json:"jsonrpc"`
-	Method  string `json:"method"`
-	Params  any    `json:"params"`
-	ID      int    `json:"id"`
-}
-
-// jsonRPCResponse is a JSON-RPC 2.0 response envelope.
-type jsonRPCResponse struct {
-	JSONRPC string          `json:"jsonrpc"`
-	Result  json.RawMessage `json:"result,omitempty"`
-	Error   *jsonRPCError   `json:"error,omitempty"`
-	ID      int             `json:"id"`
-}
-
-// jsonRPCError is a JSON-RPC 2.0 error object.
-type jsonRPCError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
-
-// Call sends a JSON-RPC 2.0 POST to the Dewey endpoint.
-// Returns the result field on success, or a structured error on failure.
+// Call sends an MCP tools/call request to the Dewey endpoint.
+// The method parameter is the Dewey tool name (e.g., "dewey_health").
+// Returns the tool result as raw JSON, or a structured error on failure.
 func (c *Client) Call(method string, params any) (json.RawMessage, error) {
-	reqBody := jsonRPCRequest{
-		JSONRPC: "2.0",
-		Method:  method,
-		Params:  params,
-		ID:      1,
-	}
-
-	body, err := json.Marshal(reqBody)
+	result, err := c.mcp.Call(method, params)
 	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
+		return nil, wrapError(err)
 	}
-
-	resp, err := c.http.Post(c.url, "application/json", bytes.NewReader(body))
-	if err != nil {
-		return nil, &UnavailableError{Cause: err}
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, &UnavailableError{
-			Cause: fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody)),
-		}
-	}
-
-	var rpcResp jsonRPCResponse
-	if err := json.Unmarshal(respBody, &rpcResp); err != nil {
-		return nil, fmt.Errorf("unmarshal response: %w", err)
-	}
-
-	if rpcResp.Error != nil {
-		return nil, fmt.Errorf("dewey error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
-	}
-
-	return rpcResp.Result, nil
+	return result, nil
 }
 
 // Health pings the Dewey endpoint to verify connectivity.
@@ -182,4 +127,14 @@ func UnavailableResponse(err error) string {
 	}
 	out, _ := json.MarshalIndent(resp, "", "  ")
 	return string(out)
+}
+
+// wrapError converts mcpclient.UnavailableError into memory.UnavailableError
+// for backward compatibility with callers that check for *memory.UnavailableError.
+func wrapError(err error) error {
+	var mcpUnavail *mcpclient.UnavailableError
+	if errors.As(err, &mcpUnavail) {
+		return &UnavailableError{Cause: mcpUnavail.Cause}
+	}
+	return err
 }

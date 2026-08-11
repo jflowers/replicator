@@ -15,7 +15,8 @@ import (
 
 // mcpHandler returns an http.HandlerFunc that mimics the MCP Streamable HTTP
 // transport. It validates POST method, Content-Type, Accept header, and
-// JSON-RPC protocol fields. Responds with SSE-formatted JSON-RPC success.
+// JSON-RPC protocol fields. Handles both "initialize" and "tools/call" methods
+// with proper MCP response formats.
 func mcpHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -50,21 +51,47 @@ func mcpHandler() http.HandlerFunc {
 			http.Error(w, "invalid jsonrpc version", http.StatusBadRequest)
 			return
 		}
-		if req["method"] == nil {
+
+		method, _ := req["method"].(string)
+		if method == "" {
 			http.Error(w, "missing method", http.StatusBadRequest)
 			return
 		}
 
 		id, _ := req["id"].(float64)
-		resp := map[string]any{
-			"jsonrpc": "2.0",
-			"result": map[string]any{
-				"capabilities":    map[string]any{},
-				"protocolVersion": "2025-03-26",
-				"serverInfo":      map[string]any{"name": "dewey", "version": "test"},
-			},
-			"id": int(id),
+
+		var resp map[string]any
+
+		switch method {
+		case "initialize":
+			resp = map[string]any{
+				"jsonrpc": "2.0",
+				"result": map[string]any{
+					"capabilities":    map[string]any{},
+					"protocolVersion": "2025-03-26",
+					"serverInfo":      map[string]any{"name": "dewey", "version": "test"},
+				},
+				"id": int(id),
+			}
+			// Set session ID header for MCP session management.
+			w.Header().Set("Mcp-Session-Id", "test-session-id")
+		case "tools/call":
+			// Return a successful MCP tools/call response with content wrapper.
+			toolResult := `{"status":"ok"}`
+			resp = map[string]any{
+				"jsonrpc": "2.0",
+				"result": map[string]any{
+					"content": []map[string]any{
+						{"type": "text", "text": toolResult},
+					},
+				},
+				"id": int(id),
+			}
+		default:
+			http.Error(w, "unknown method", http.StatusBadRequest)
+			return
 		}
+
 		respJSON, err := json.Marshal(resp)
 		if err != nil {
 			http.Error(w, "encode error", http.StatusInternalServerError)
@@ -206,9 +233,28 @@ func TestCheckDewey_HTTPError(t *testing.T) {
 }
 
 func TestCheckDewey_RPCError(t *testing.T) {
+	// Return success for initialize but a JSON-RPC error for tools/call.
+	callCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req map[string]any
+		json.Unmarshal(body, &req)
+
+		method, _ := req["method"].(string)
+		id, _ := req["id"].(float64)
+		callCount++
+
 		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprint(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32601,\"message\":\"method not found\"},\"id\":1}\n\n")
+
+		if method == "initialize" {
+			resp := fmt.Sprintf(`{"jsonrpc":"2.0","result":{"capabilities":{},"protocolVersion":"2025-03-26","serverInfo":{"name":"dewey","version":"test"}},"id":%d}`, int(id))
+			w.Header().Set("Mcp-Session-Id", "test-session")
+			fmt.Fprintf(w, "event: message\ndata: %s\n\n", resp)
+			return
+		}
+
+		// Return error for tools/call.
+		fmt.Fprintf(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32601,\"message\":\"method not found\"},\"id\":%d}\n\n", int(id))
 	}))
 	defer srv.Close()
 

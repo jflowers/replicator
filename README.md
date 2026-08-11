@@ -151,6 +151,7 @@ internal/
   org/                Cell CRUD, epics, sessions, sync
   comms/              Agent messaging, file reservations
   forge/              Decomposition, spawning, worktrees, review, insights
+  mcpclient/          MCP Streamable HTTP client (shared transport)
   memory/             Dewey proxy, deprecated tool stubs
   gitutil/            Git worktree operations (os/exec)
   doctor/             Health check engine

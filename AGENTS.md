@@ -411,6 +411,7 @@ internal/
   org/                Cell domain logic (CRUD, epics, sessions, sync)
   comms/              Agent messaging + file reservations
   forge/              Orchestration (decompose, spawn, worktree, review, insights)
+  mcpclient/          MCP Streamable HTTP client (shared transport)
   memory/             Dewey proxy + deprecated tool stubs
   gitutil/            Git worktree operations (os/exec)
   doctor/             Health check engine

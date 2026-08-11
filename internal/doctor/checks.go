@@ -6,11 +6,7 @@
 package doctor
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -18,6 +14,7 @@ import (
 
 	"github.com/unbound-force/replicator/internal/config"
 	"github.com/unbound-force/replicator/internal/db"
+	"github.com/unbound-force/replicator/internal/mcpclient"
 )
 
 // CheckResult holds the outcome of a single health check.
@@ -119,78 +116,16 @@ func checkDewey(deweyURL string) CheckResult {
 	}
 }
 
-// deweyHealthProbe sends an MCP initialize request to verify Dewey is alive.
-// This is a lightweight probe that does not establish a full session.
+// deweyHealthProbe uses the shared MCP client to verify Dewey is alive.
+// It sends an initialize handshake followed by a dewey_health tools/call.
 func deweyHealthProbe(deweyURL string) error {
-	reqBody := map[string]any{
-		"jsonrpc": "2.0",
-		"method":  "initialize",
-		"id":      1,
-		"params": map[string]any{
-			"protocolVersion": "2025-03-26",
-			"capabilities":   map[string]any{},
-			"clientInfo": map[string]any{
-				"name":    "replicator-doctor",
-				"version": "1.0.0",
-			},
-		},
-	}
-
-	body, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
-	}
-
-	req, err := http.NewRequest(http.MethodPost, deweyURL, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json, text/event-stream")
-
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
-	}
-
-	// Read the SSE response — look for a JSON-RPC result in the event stream.
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read response: %w", err)
-	}
-
-	// The response is SSE format: "event: message\ndata: {json}\n\n"
-	// Extract the JSON data line.
-	for _, line := range strings.Split(string(respBody), "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		data := strings.TrimPrefix(line, "data: ")
-		var rpcResp struct {
-			Result any `json:"result"`
-			Error  *struct {
-				Message string `json:"message"`
-			} `json:"error"`
-		}
-		if err := json.Unmarshal([]byte(data), &rpcResp); err != nil {
-			return fmt.Errorf("parse response: %w", err)
-		}
-		if rpcResp.Error != nil {
-			return fmt.Errorf("dewey error: %s", rpcResp.Error.Message)
-		}
-		// Got a successful initialize response — Dewey is alive.
-		return nil
-	}
-
-	return fmt.Errorf("no valid response from Dewey")
+	client := mcpclient.New(deweyURL, mcpclient.Config{
+		Name:    "replicator-doctor",
+		Version: "1.0.0",
+		Timeout: 5 * time.Second,
+	})
+	_, err := client.Call("dewey_health", map[string]any{})
+	return err
 }
 
 // checkConfigDir verifies the config directory exists.
