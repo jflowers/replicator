@@ -283,10 +283,7 @@ func TestCall_InitializeHTTPError(t *testing.T) {
 }
 
 func TestCall_SSEResponseWithJSONRPCError(t *testing.T) {
-	srv, _ := newMCPServer(t)
-
-	// Override the server to return a JSON-RPC error for tools/call.
-	// We need a custom server for this since the handler doesn't support it directly.
+	// Custom server that returns a JSON-RPC error for tools/call.
 	errorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
 		json.NewDecoder(r.Body).Decode(&req)
@@ -322,7 +319,6 @@ func TestCall_SSEResponseWithJSONRPCError(t *testing.T) {
 		fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
 	}))
 	defer errorSrv.Close()
-	_ = srv // suppress unused
 
 	client := New(errorSrv.URL, Config{Name: "test-client", Version: "1.0.0"})
 	_, err := client.Call("test", map[string]any{})

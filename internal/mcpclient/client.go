@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"bytes"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -141,7 +142,7 @@ func (c *Client) initSession() error {
 		return &UnavailableError{Cause: fmt.Errorf("marshal initialize: %w", err)}
 	}
 
-	req, err := http.NewRequest(http.MethodPost, c.url, strings.NewReader(string(body)))
+	req, err := http.NewRequest(http.MethodPost, c.url, bytes.NewReader(body))
 	if err != nil {
 		return &UnavailableError{Cause: fmt.Errorf("create initialize request: %w", err)}
 	}
@@ -198,7 +199,7 @@ func (c *Client) doToolsCall(method string, params any, sessionID string) (json.
 		return nil, 0, fmt.Errorf("marshal tools/call: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, c.url, strings.NewReader(string(body)))
+	req, err := http.NewRequest(http.MethodPost, c.url, bytes.NewReader(body))
 	if err != nil {
 		return nil, 0, fmt.Errorf("create tools/call request: %w", err)
 	}
@@ -277,6 +278,9 @@ func (c *Client) parseResponse(resp *http.Response) (*jsonRPCResponse, error) {
 	}
 
 	// SSE response: scan for data: lines.
+	if !strings.HasPrefix(ct, "text/event-stream") && ct != "" {
+		return nil, fmt.Errorf("unexpected content type %q", ct)
+	}
 	for _, line := range strings.Split(string(respBody), "\n") {
 		line = strings.TrimSpace(line)
 		var data string
