@@ -826,6 +826,31 @@ func TestNew_CustomTimeout(t *testing.T) {
 	}
 }
 
+func TestUnavailableError_Unwrap(t *testing.T) {
+	cause := fmt.Errorf("connection refused")
+	unavail := &UnavailableError{Cause: cause}
+
+	// Error() includes the cause message.
+	if got := unavail.Error(); got != "mcp unavailable: connection refused" {
+		t.Errorf("Error() = %q, want %q", got, "mcp unavailable: connection refused")
+	}
+
+	// Unwrap() returns the original cause.
+	if got := unavail.Unwrap(); got != cause {
+		t.Errorf("Unwrap() = %v, want %v", got, cause)
+	}
+
+	// errors.Is works through Unwrap chain.
+	wrapped := fmt.Errorf("outer: %w", unavail)
+	var target *UnavailableError
+	if !errors.As(wrapped, &target) {
+		t.Errorf("errors.As failed to find UnavailableError through wrapping")
+	}
+	if target.Unwrap() != cause {
+		t.Errorf("unwrapped cause = %v, want %v", target.Unwrap(), cause)
+	}
+}
+
 // --- Helpers ---
 
 type testLogger struct {
