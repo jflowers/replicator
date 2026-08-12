@@ -200,12 +200,12 @@ func (c *Client) doToolsCall(method string, params any, sessionID string) (json.
 
 	body, err := json.Marshal(reqBody)
 	if err != nil {
-		return nil, 0, fmt.Errorf("marshal tools/call: %w", err)
+		return nil, 0, &UnavailableError{Cause: fmt.Errorf("marshal tools/call: %w", err)}
 	}
 
 	req, err := http.NewRequest(http.MethodPost, c.url, bytes.NewReader(body))
 	if err != nil {
-		return nil, 0, fmt.Errorf("create tools/call request: %w", err)
+		return nil, 0, &UnavailableError{Cause: fmt.Errorf("create tools/call request: %w", err)}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")

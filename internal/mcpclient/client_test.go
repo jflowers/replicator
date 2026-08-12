@@ -26,11 +26,9 @@ type mcpHandler struct {
 
 	// overrides allow tests to customize behavior.
 	initStatus     int                                          // HTTP status for initialize (0 = 200)
-	initResponse   string                                       // custom init response body
 	noSessionID    bool                                          // omit Mcp-Session-Id header
 	toolHandler    func(name string, args json.RawMessage) any   // custom tool result
 	toolStatus     int                                           // HTTP status for tools/call (0 = 200)
-	toolResponse   string                                        // custom tools/call response body
 	plainJSON      bool                                          // respond with application/json instead of SSE
 	emptyBody      bool                                          // respond with empty body
 	malformedSSE   bool                                          // respond with malformed SSE
