@@ -7,11 +7,11 @@
 package mcpclient
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"bytes"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -93,6 +93,10 @@ func (c *Client) Call(method string, params any) (json.RawMessage, error) {
 	result, statusCode, err := c.doToolsCall(method, params, sessionID)
 	if err != nil && (statusCode == http.StatusBadRequest || statusCode == http.StatusNotFound) {
 		// Session recovery: reset and retry once.
+		// The lock is held across initSession + doToolsCall to prevent
+		// concurrent goroutines from triggering redundant re-initialization
+		// (TOCTOU fix). doToolsCall is I/O-bound but recovery is rare,
+		// so serializing the retry path is acceptable.
 		c.mu.Lock()
 		c.inited = false
 		c.sessionID = ""
@@ -101,13 +105,13 @@ func (c *Client) Call(method string, params any) (json.RawMessage, error) {
 			return nil, err
 		}
 		sessionID = c.sessionID
-		c.mu.Unlock()
 
 		if c.config.Logger != nil {
 			c.config.Logger.Warn("session recovery triggered", "status", statusCode)
 		}
 
 		result, _, err = c.doToolsCall(method, params, sessionID)
+		c.mu.Unlock()
 		if err != nil {
 			if c.config.Logger != nil {
 				c.config.Logger.Warn("session recovery failed", "error", err)
@@ -224,7 +228,7 @@ func (c *Client) doToolsCall(method string, params any, sessionID string) (json.
 
 	result, err := c.parseToolsCallResponse(resp)
 	if err != nil {
-		return nil, resp.StatusCode, err
+		return nil, resp.StatusCode, &UnavailableError{Cause: err}
 	}
 
 	return result, resp.StatusCode, nil
@@ -278,6 +282,8 @@ func (c *Client) parseResponse(resp *http.Response) (*jsonRPCResponse, error) {
 	}
 
 	// SSE response: scan for data: lines.
+	// Empty Content-Type falls through to SSE scanning intentionally —
+	// some MCP servers omit the header on streamed responses.
 	if !strings.HasPrefix(ct, "text/event-stream") && ct != "" {
 		return nil, fmt.Errorf("unexpected content type %q", ct)
 	}
