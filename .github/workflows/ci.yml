@@ -70,6 +70,7 @@ jobs:
             ["internal/gitutil"]=80
             ["internal/ui"]=75
             ["internal/mcp"]=70
+            ["internal/mcpclient"]=80
           )
 
           for PKG in "${!THRESHOLDS[@]}"; do
