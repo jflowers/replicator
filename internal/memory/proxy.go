@@ -26,7 +26,9 @@ type Client struct {
 func NewClient(deweyURL string) *Client {
 	return &Client{
 		mcp: mcpclient.New(deweyURL, mcpclient.Config{
-			Name:    "replicator-memory",
+			Name: "replicator-memory",
+			// Version is the MCP protocol version for the initialize handshake,
+			// not the replicator binary version.
 			Version: "1.0.0",
 			Timeout: 10 * time.Second,
 		}),

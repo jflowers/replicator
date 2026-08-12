@@ -114,6 +114,19 @@ func (h *mcpHandler) handleInitialize(w http.ResponseWriter, r *http.Request, re
 func (h *mcpHandler) handleToolsCall(w http.ResponseWriter, r *http.Request, req map[string]any) {
 	h.toolCallCount.Add(1)
 
+	// Validate session ID header matches issued session (only when the
+	// handler actually sent a session ID in the initialize response).
+	h.mu.Lock()
+	expectedSID := h.sessionID
+	issuedSID := !h.noSessionID && expectedSID != ""
+	h.mu.Unlock()
+	if issuedSID {
+		gotSID := r.Header.Get("Mcp-Session-Id")
+		if gotSID != expectedSID {
+			h.t.Errorf("Mcp-Session-Id = %q, want %q", gotSID, expectedSID)
+		}
+	}
+
 	// Session rejection simulation.
 	h.mu.Lock()
 	if h.rejectCount > 0 && h.rejectedSoFar < h.rejectCount {
