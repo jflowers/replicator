@@ -2,6 +2,7 @@
 description: Decompose task into subtasks and coordinate parallel agents
 ---
 
+<protect>
 # /forge
 
 Decompose a task and spawn parallel workers.
@@ -48,3 +49,4 @@ $ARGUMENTS
 - Workers reserve their own files via `comms_reserve`
 - Check inbox regularly for blocked workers
 - Store learnings after completion
+</protect>

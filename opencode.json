@@ -1,5 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "protectTags": true,
   "mcp": {
     "dewey": {
       "type": "local",

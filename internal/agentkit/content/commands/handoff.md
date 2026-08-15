@@ -2,6 +2,7 @@
 description: End a session cleanly - release reservations, sync state, generate handoff note
 ---
 
+<protect>
 # /handoff
 
 Wrap up a session cleanly.
@@ -50,3 +51,4 @@ or parallelize.
    - Next Steps: What the next agent should do first
    - Gotchas: Any surprises or edge cases discovered
    ```
+</protect>
