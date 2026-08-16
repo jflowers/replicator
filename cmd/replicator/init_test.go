@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -56,6 +57,19 @@ func TestRunInit_FreshDirectory(t *testing.T) {
 			t.Errorf("expected agent kit file %s to exist: %v", rel, err)
 		}
 	}
+
+	// Verify DCP config was created with protectTags.
+	dcpPath := filepath.Join(dir, ".opencode", "dcp.jsonc")
+	dcpData, err := os.ReadFile(dcpPath)
+	if err != nil {
+		t.Fatalf("dcp.jsonc not created: %v", err)
+	}
+	if !strings.Contains(string(dcpData), "protectTags") {
+		t.Error("dcp.jsonc missing protectTags")
+	}
+	if !strings.Contains(string(dcpData), "$schema") {
+		t.Error("dcp.jsonc missing $schema")
+	}
 }
 
 func TestRunInit_AgentKitSkipsExisting(t *testing.T) {
@@ -63,16 +77,23 @@ func TestRunInit_AgentKitSkipsExisting(t *testing.T) {
 
 	// Pre-create a file that init would scaffold.
 	forgePath := filepath.Join(dir, ".opencode", "commands", "forge.md")
-	os.MkdirAll(filepath.Dir(forgePath), 0o755)
+	if err := os.MkdirAll(filepath.Dir(forgePath), 0o755); err != nil {
+		t.Fatalf("setup MkdirAll: %v", err)
+	}
 	original := []byte("# my custom forge\n")
-	os.WriteFile(forgePath, original, 0o644)
+	if err := os.WriteFile(forgePath, original, 0o644); err != nil {
+		t.Fatalf("setup WriteFile: %v", err)
+	}
 
 	if err := runInit(dir, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 
 	// Verify the pre-existing file was NOT overwritten.
-	data, _ := os.ReadFile(forgePath)
+	data, err := os.ReadFile(forgePath)
+	if err != nil {
+		t.Fatalf("read forge.md: %v", err)
+	}
 	if string(data) != string(original) {
 		t.Errorf("forge.md was overwritten: got %q, want %q", string(data), string(original))
 	}
@@ -89,16 +110,23 @@ func TestRunInit_ForceOverwrites(t *testing.T) {
 
 	// Pre-create a file that init would scaffold.
 	forgePath := filepath.Join(dir, ".opencode", "commands", "forge.md")
-	os.MkdirAll(filepath.Dir(forgePath), 0o755)
+	if err := os.MkdirAll(filepath.Dir(forgePath), 0o755); err != nil {
+		t.Fatalf("setup MkdirAll: %v", err)
+	}
 	original := []byte("# my custom forge\n")
-	os.WriteFile(forgePath, original, 0o644)
+	if err := os.WriteFile(forgePath, original, 0o644); err != nil {
+		t.Fatalf("setup WriteFile: %v", err)
+	}
 
 	if err := runInit(dir, true); err != nil {
 		t.Fatalf("runInit with force: %v", err)
 	}
 
 	// Verify the pre-existing file WAS overwritten.
-	data, _ := os.ReadFile(forgePath)
+	data, err := os.ReadFile(forgePath)
+	if err != nil {
+		t.Fatalf("read forge.md: %v", err)
+	}
 	if string(data) == string(original) {
 		t.Error("forge.md was NOT overwritten despite force=true")
 	}
@@ -114,7 +142,9 @@ func TestRunInit_AlreadyInitialized(t *testing.T) {
 
 	// Write something to cells.json to verify it's not overwritten.
 	cellsPath := filepath.Join(dir, ".uf", "replicator", "cells.json")
-	os.WriteFile(cellsPath, []byte(`[{"id":"test"}]`), 0o644)
+	if err := os.WriteFile(cellsPath, []byte(`[{"id":"test"}]`), 0o644); err != nil {
+		t.Fatalf("setup WriteFile: %v", err)
+	}
 
 	// Second init — should be idempotent.
 	if err := runInit(dir, false); err != nil {
@@ -122,7 +152,10 @@ func TestRunInit_AlreadyInitialized(t *testing.T) {
 	}
 
 	// Verify cells.json was NOT overwritten.
-	data, _ := os.ReadFile(cellsPath)
+	data, err := os.ReadFile(cellsPath)
+	if err != nil {
+		t.Fatalf("read cells.json: %v", err)
+	}
 	if string(data) != `[{"id":"test"}]` {
 		t.Errorf("cells.json was overwritten: got %q", string(data))
 	}
@@ -132,12 +165,32 @@ func TestRunInit_AlreadyInitialized(t *testing.T) {
 	if _, err := os.Stat(forgePath); err != nil {
 		t.Errorf("agent kit files should exist after second init: %v", err)
 	}
+
+	// Verify DCP config still exists and content was preserved.
+	dcpPath := filepath.Join(dir, ".opencode", "dcp.jsonc")
+	dcpBefore, err := os.ReadFile(dcpPath)
+	if err != nil {
+		t.Fatalf("read dcp.jsonc before second init: %v", err)
+	}
+	// Re-run init and verify DCP content is unchanged.
+	if err := runInit(dir, false); err != nil {
+		t.Fatalf("third runInit: %v", err)
+	}
+	dcpAfter, err := os.ReadFile(dcpPath)
+	if err != nil {
+		t.Fatalf("read dcp.jsonc after third init: %v", err)
+	}
+	if string(dcpAfter) != string(dcpBefore) {
+		t.Error("dcp.jsonc was modified on re-init")
+	}
 }
 
 func TestRunInit_CustomPath(t *testing.T) {
 	parent := t.TempDir()
 	target := filepath.Join(parent, "myproject")
-	os.MkdirAll(target, 0o755)
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatalf("setup MkdirAll: %v", err)
+	}
 
 	if err := runInit(target, false); err != nil {
 		t.Fatalf("runInit with custom path: %v", err)

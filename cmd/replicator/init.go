@@ -76,5 +76,19 @@ func runInit(targetDir string, force bool) error {
 		}
 	}
 
+	// Scaffold DCP config for protect tag support.
+	dcpResult, err := agentkit.ScaffoldDCP(targetDir)
+	if err != nil {
+		return fmt.Errorf("scaffold DCP config: %w", err)
+	}
+	switch dcpResult.Action {
+	case "created":
+		fmt.Println(styles.Pass.Render(fmt.Sprintf("created .opencode/%s", dcpResult.Path)))
+	case "skipped":
+		fmt.Println(styles.Dim.Render(fmt.Sprintf("skipped .opencode/%s (exists)", dcpResult.Path)))
+	case "updated":
+		fmt.Println(styles.Warn.Render(fmt.Sprintf("updated .opencode/%s (added protectTags)", dcpResult.Path)))
+	}
+
 	return nil
 }

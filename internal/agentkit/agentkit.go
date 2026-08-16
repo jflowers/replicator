@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 //go:embed content/*
@@ -20,6 +21,68 @@ var content embed.FS
 type ScaffoldResult struct {
 	Path   string `json:"path"`
 	Action string `json:"action"` // "created", "skipped", "overwritten"
+}
+
+// dcpConfigContent is the canonical DCP config that enables protectTags.
+// This matches the replicator repo's own .opencode/dcp.jsonc.
+const dcpConfigContent = `{
+  "$schema": "https://raw.githubusercontent.com/Opencode-DCP/opencode-dynamic-context-pruning/master/dcp.schema.json",
+  // Enable <protect> tag preservation during DCP compression.
+  // Slash command files in .opencode/commands/ use <protect> tags
+  // to mark execution-critical sections (guardrails, checklists,
+  // mandatory gates) that must survive context pruning.
+  "compress": {
+    "protectTags": true
+  }
+}
+`
+
+// ScaffoldDCP creates or updates the DCP configuration file in
+// targetDir/.opencode/. It checks for dcp.jsonc first, then dcp.json.
+// If neither exists, it creates dcp.jsonc. If one exists with protectTags
+// already configured, it is skipped. If one exists without protectTags,
+// the file is replaced with the canonical DCP config content.
+func ScaffoldDCP(targetDir string) (ScaffoldResult, error) {
+	openCodeDir := filepath.Join(targetDir, ".opencode")
+	jsoncPath := filepath.Join(openCodeDir, "dcp.jsonc")
+	jsonPath := filepath.Join(openCodeDir, "dcp.json")
+
+	// Check .jsonc first, then .json (D3: prefer .jsonc).
+	var existingPath, fileName string
+	if _, err := os.Stat(jsoncPath); err == nil {
+		existingPath = jsoncPath
+		fileName = "dcp.jsonc"
+	} else if _, err := os.Stat(jsonPath); err == nil {
+		existingPath = jsonPath
+		fileName = "dcp.json"
+	}
+
+	if existingPath != "" {
+		// File exists — check for protectTags (D2: string scan).
+		data, err := os.ReadFile(existingPath)
+		if err != nil {
+			return ScaffoldResult{}, fmt.Errorf("read %s: %w", fileName, err)
+		}
+
+		if strings.Contains(string(data), "protectTags") {
+			return ScaffoldResult{Path: fileName, Action: "skipped"}, nil
+		}
+
+		// File exists but lacks protectTags — replace with canonical content (D10).
+		if err := os.WriteFile(existingPath, []byte(dcpConfigContent), 0o644); err != nil {
+			return ScaffoldResult{}, fmt.Errorf("write %s: %w", fileName, err)
+		}
+		return ScaffoldResult{Path: fileName, Action: "updated"}, nil
+	}
+
+	// Neither file exists — create .opencode/dcp.jsonc.
+	if err := os.MkdirAll(openCodeDir, 0o755); err != nil {
+		return ScaffoldResult{}, fmt.Errorf("create .opencode directory: %w", err)
+	}
+	if err := os.WriteFile(jsoncPath, []byte(dcpConfigContent), 0o644); err != nil {
+		return ScaffoldResult{}, fmt.Errorf("write dcp.jsonc: %w", err)
+	}
+	return ScaffoldResult{Path: "dcp.jsonc", Action: "created"}, nil
 }
 
 // Scaffold writes the embedded agent kit files to targetDir/.opencode/.

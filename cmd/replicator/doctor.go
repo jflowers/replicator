@@ -17,7 +17,12 @@ func runDoctor(cfg *config.Config) error {
 	}
 	defer store.Close()
 
-	results, err := doctor.Run(store, cfg)
+	projectDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get working directory: %w", err)
+	}
+
+	results, err := doctor.Run(store, cfg, projectDir)
 	if err != nil {
 		return fmt.Errorf("run checks: %w", err)
 	}

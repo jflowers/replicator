@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -125,13 +127,16 @@ func TestRun_AllChecks(t *testing.T) {
 		DeweyURL: srv.URL,
 	}
 
-	results, err := Run(store, cfg)
+	// Use a temp dir as project dir for the DCP config check.
+	projectDir := t.TempDir()
+
+	results, err := Run(store, cfg, projectDir)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
-	if len(results) != 4 {
-		t.Fatalf("expected 4 checks, got %d", len(results))
+	if len(results) != 5 {
+		t.Fatalf("expected 5 checks, got %d", len(results))
 	}
 
 	// Verify check names.
@@ -139,7 +144,7 @@ func TestRun_AllChecks(t *testing.T) {
 	for _, r := range results {
 		names[r.Name] = true
 	}
-	for _, expected := range []string{"git", "database", "dewey", "config_dir"} {
+	for _, expected := range []string{"git", "database", "dewey", "config_dir", "dcp_config"} {
 		if !names[expected] {
 			t.Errorf("missing check: %s", expected)
 		}
@@ -284,6 +289,137 @@ func TestCheckConfigDir(t *testing.T) {
 	}
 }
 
+func TestCheckDCPConfig_PassWithProtectTags(t *testing.T) {
+	dir := t.TempDir()
+	cmdDir := filepath.Join(dir, ".opencode", "commands")
+	if err := os.MkdirAll(cmdDir, 0o755); err != nil {
+		t.Fatalf("setup MkdirAll: %v", err)
+	}
+	// Create a command with <protect> tag.
+	if err := os.WriteFile(filepath.Join(cmdDir, "forge.md"), []byte("---\n---\n\n<protect>\n# /forge\n"), 0o644); err != nil {
+		t.Fatalf("setup WriteFile: %v", err)
+	}
+	// Create DCP config with protectTags.
+	if err := os.WriteFile(filepath.Join(dir, ".opencode", "dcp.jsonc"), []byte(`{"compress":{"protectTags":true}}`), 0o644); err != nil {
+		t.Fatalf("setup WriteFile: %v", err)
+	}
+
+	result := checkDCPConfig(dir)
+	if result.Name != "dcp_config" {
+		t.Errorf("name = %q, want %q", result.Name, "dcp_config")
+	}
+	if result.Status != "pass" {
+		t.Errorf("status = %q, want %q (message: %s)", result.Status, "pass", result.Message)
+	}
+	if !strings.Contains(result.Message, "protectTags enabled") {
+		t.Errorf("message = %q, want it to contain %q", result.Message, "protectTags enabled")
+	}
+	if result.Duration <= 0 {
+		t.Error("duration should be positive")
+	}
+}
+
+func TestCheckDCPConfig_PassNoCommands(t *testing.T) {
+	dir := t.TempDir()
+	// No .opencode/commands/ directory — no protect-tagged commands.
+
+	result := checkDCPConfig(dir)
+	if result.Status != "pass" {
+		t.Errorf("status = %q, want %q (message: %s)", result.Status, "pass", result.Message)
+	}
+	if !strings.Contains(result.Message, "no protect-tagged commands") {
+		t.Errorf("message = %q, want it to contain %q", result.Message, "no protect-tagged commands")
+	}
+}
+
+func TestCheckDCPConfig_PassNoProtectTags(t *testing.T) {
+	dir := t.TempDir()
+	cmdDir := filepath.Join(dir, ".opencode", "commands")
+	if err := os.MkdirAll(cmdDir, 0o755); err != nil {
+		t.Fatalf("setup MkdirAll: %v", err)
+	}
+	// Command file WITHOUT <protect> tag.
+	if err := os.WriteFile(filepath.Join(cmdDir, "forge.md"), []byte("---\n---\n\n# /forge\n"), 0o644); err != nil {
+		t.Fatalf("setup WriteFile: %v", err)
+	}
+
+	result := checkDCPConfig(dir)
+	if result.Status != "pass" {
+		t.Errorf("status = %q, want %q (message: %s)", result.Status, "pass", result.Message)
+	}
+	if !strings.Contains(result.Message, "no protect-tagged commands") {
+		t.Errorf("message = %q, want it to contain %q", result.Message, "no protect-tagged commands")
+	}
+}
+
+func TestCheckDCPConfig_WarnNoDCPConfig(t *testing.T) {
+	dir := t.TempDir()
+	cmdDir := filepath.Join(dir, ".opencode", "commands")
+	if err := os.MkdirAll(cmdDir, 0o755); err != nil {
+		t.Fatalf("setup MkdirAll: %v", err)
+	}
+	// Create a command with <protect> tag but NO DCP config.
+	if err := os.WriteFile(filepath.Join(cmdDir, "forge.md"), []byte("---\n---\n\n<protect>\n# /forge\n"), 0o644); err != nil {
+		t.Fatalf("setup WriteFile: %v", err)
+	}
+
+	result := checkDCPConfig(dir)
+	if result.Status != "warn" {
+		t.Errorf("status = %q, want %q (message: %s)", result.Status, "warn", result.Message)
+	}
+	if !strings.Contains(result.Message, "replicator init") {
+		t.Errorf("message = %q, want it to contain %q", result.Message, "replicator init")
+	}
+}
+
+func TestCheckDCPConfig_WarnMissingProtectTags(t *testing.T) {
+	dir := t.TempDir()
+	cmdDir := filepath.Join(dir, ".opencode", "commands")
+	if err := os.MkdirAll(cmdDir, 0o755); err != nil {
+		t.Fatalf("setup MkdirAll: %v", err)
+	}
+	// Create a command with <protect> tag.
+	if err := os.WriteFile(filepath.Join(cmdDir, "forge.md"), []byte("---\n---\n\n<protect>\n# /forge\n"), 0o644); err != nil {
+		t.Fatalf("setup WriteFile: %v", err)
+	}
+	// Create DCP config WITHOUT protectTags.
+	if err := os.WriteFile(filepath.Join(dir, ".opencode", "dcp.jsonc"), []byte(`{"compress":{"minTokens":100}}`), 0o644); err != nil {
+		t.Fatalf("setup WriteFile: %v", err)
+	}
+
+	result := checkDCPConfig(dir)
+	if result.Status != "warn" {
+		t.Errorf("status = %q, want %q (message: %s)", result.Status, "warn", result.Message)
+	}
+	if !strings.Contains(result.Message, "protectTags") {
+		t.Errorf("message = %q, want it to contain %q", result.Message, "protectTags")
+	}
+}
+
+func TestCheckDCPConfig_PassWithJSONAlias(t *testing.T) {
+	dir := t.TempDir()
+	cmdDir := filepath.Join(dir, ".opencode", "commands")
+	if err := os.MkdirAll(cmdDir, 0o755); err != nil {
+		t.Fatalf("setup MkdirAll: %v", err)
+	}
+	// Create a command with <protect> tag.
+	if err := os.WriteFile(filepath.Join(cmdDir, "forge.md"), []byte("---\n---\n\n<protect>\n# /forge\n"), 0o644); err != nil {
+		t.Fatalf("setup WriteFile: %v", err)
+	}
+	// Create DCP config as .dcp.json (not .jsonc) with protectTags.
+	if err := os.WriteFile(filepath.Join(dir, ".opencode", "dcp.json"), []byte(`{"compress":{"protectTags":true}}`), 0o644); err != nil {
+		t.Fatalf("setup WriteFile: %v", err)
+	}
+
+	result := checkDCPConfig(dir)
+	if result.Status != "pass" {
+		t.Errorf("status = %q, want %q (message: %s)", result.Status, "pass", result.Message)
+	}
+	if !strings.Contains(result.Message, "protectTags enabled") {
+		t.Errorf("message = %q, want it to contain %q", result.Message, "protectTags enabled")
+	}
+}
+
 func TestCheckResult_StatusValues(t *testing.T) {
 	// Verify that all results use valid status values.
 	store := testStore(t)
@@ -291,7 +427,8 @@ func TestCheckResult_StatusValues(t *testing.T) {
 	defer srv.Close()
 
 	cfg := &config.Config{DeweyURL: srv.URL}
-	results, _ := Run(store, cfg)
+	projectDir := t.TempDir()
+	results, _ := Run(store, cfg, projectDir)
 
 	validStatuses := map[string]bool{"pass": true, "fail": true, "warn": true}
 	for _, r := range results {

@@ -1078,6 +1078,183 @@ func TestSkillFiles_DriftDetection(t *testing.T) {
 
 
 
+func TestScaffoldDCP_FreshDirectory(t *testing.T) {
+	dir := t.TempDir()
+	result, err := ScaffoldDCP(dir)
+	if err != nil {
+		t.Fatalf("ScaffoldDCP: %v", err)
+	}
+
+	if result.Action != "created" {
+		t.Errorf("action = %q, want %q", result.Action, "created")
+	}
+	if result.Path != "dcp.jsonc" {
+		t.Errorf("path = %q, want %q", result.Path, "dcp.jsonc")
+	}
+
+	// Verify the file exists and contains protectTags.
+	data, err := os.ReadFile(filepath.Join(dir, ".opencode", "dcp.jsonc"))
+	if err != nil {
+		t.Fatalf("read dcp.jsonc: %v", err)
+	}
+	if !strings.Contains(string(data), "protectTags") {
+		t.Error("dcp.jsonc missing protectTags")
+	}
+	if !strings.Contains(string(data), `"$schema"`) {
+		t.Error("dcp.jsonc missing $schema")
+	}
+}
+
+func TestScaffoldDCP_ExistingWithProtectTags(t *testing.T) {
+	dir := t.TempDir()
+	dcpDir := filepath.Join(dir, ".opencode")
+	if err := os.MkdirAll(dcpDir, 0o755); err != nil {
+		t.Fatalf("setup MkdirAll: %v", err)
+	}
+	existing := []byte(`{"compress":{"protectTags":true}}`)
+	if err := os.WriteFile(filepath.Join(dcpDir, "dcp.jsonc"), existing, 0o644); err != nil {
+		t.Fatalf("setup WriteFile: %v", err)
+	}
+
+	result, err := ScaffoldDCP(dir)
+	if err != nil {
+		t.Fatalf("ScaffoldDCP: %v", err)
+	}
+
+	if result.Action != "skipped" {
+		t.Errorf("action = %q, want %q", result.Action, "skipped")
+	}
+
+	// Verify file was NOT overwritten.
+	data, err := os.ReadFile(filepath.Join(dcpDir, "dcp.jsonc"))
+	if err != nil {
+		t.Fatalf("read dcp.jsonc: %v", err)
+	}
+	if string(data) != string(existing) {
+		t.Error("dcp.jsonc was modified despite having protectTags")
+	}
+}
+
+func TestScaffoldDCP_ExistingWithoutProtectTags(t *testing.T) {
+	dir := t.TempDir()
+	dcpDir := filepath.Join(dir, ".opencode")
+	if err := os.MkdirAll(dcpDir, 0o755); err != nil {
+		t.Fatalf("setup MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dcpDir, "dcp.jsonc"), []byte(`{"compress":{"minTokens":100}}`), 0o644); err != nil {
+		t.Fatalf("setup WriteFile: %v", err)
+	}
+
+	result, err := ScaffoldDCP(dir)
+	if err != nil {
+		t.Fatalf("ScaffoldDCP: %v", err)
+	}
+
+	if result.Action != "updated" {
+		t.Errorf("action = %q, want %q", result.Action, "updated")
+	}
+
+	// Verify file was replaced with canonical content containing protectTags.
+	data, err := os.ReadFile(filepath.Join(dcpDir, "dcp.jsonc"))
+	if err != nil {
+		t.Fatalf("read dcp.jsonc: %v", err)
+	}
+	if !strings.Contains(string(data), "protectTags") {
+		t.Error("dcp.jsonc missing protectTags after update")
+	}
+	if !strings.Contains(string(data), "$schema") {
+		t.Error("dcp.jsonc missing $schema after update")
+	}
+}
+
+func TestScaffoldDCP_JSONAlias(t *testing.T) {
+	dir := t.TempDir()
+	dcpDir := filepath.Join(dir, ".opencode")
+	if err := os.MkdirAll(dcpDir, 0o755); err != nil {
+		t.Fatalf("setup MkdirAll: %v", err)
+	}
+	// Only .dcp.json exists (no .jsonc).
+	if err := os.WriteFile(filepath.Join(dcpDir, "dcp.json"), []byte(`{"compress":{"minTokens":100}}`), 0o644); err != nil {
+		t.Fatalf("setup WriteFile: %v", err)
+	}
+
+	result, err := ScaffoldDCP(dir)
+	if err != nil {
+		t.Fatalf("ScaffoldDCP: %v", err)
+	}
+
+	// Should operate on the .json file.
+	if result.Path != "dcp.json" {
+		t.Errorf("path = %q, want %q", result.Path, "dcp.json")
+	}
+	if result.Action != "updated" {
+		t.Errorf("action = %q, want %q", result.Action, "updated")
+	}
+
+	// Verify .json file was updated (not a new .jsonc created).
+	data, err := os.ReadFile(filepath.Join(dcpDir, "dcp.json"))
+	if err != nil {
+		t.Fatalf("read dcp.json: %v", err)
+	}
+	if !strings.Contains(string(data), "protectTags") {
+		t.Error("dcp.json missing protectTags after update")
+	}
+	if !strings.Contains(string(data), "$schema") {
+		t.Error("dcp.json missing $schema after update")
+	}
+	// Verify .jsonc was NOT created.
+	if _, err := os.Stat(filepath.Join(dcpDir, "dcp.jsonc")); err == nil {
+		t.Error("dcp.jsonc should not be created when dcp.json exists")
+	}
+}
+
+func TestScaffoldDCP_BothFilesExist(t *testing.T) {
+	dir := t.TempDir()
+	dcpDir := filepath.Join(dir, ".opencode")
+	if err := os.MkdirAll(dcpDir, 0o755); err != nil {
+		t.Fatalf("setup MkdirAll: %v", err)
+	}
+	// Both exist — .jsonc should be preferred.
+	if err := os.WriteFile(filepath.Join(dcpDir, "dcp.jsonc"), []byte(`{"compress":{"protectTags":true}}`), 0o644); err != nil {
+		t.Fatalf("setup WriteFile: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dcpDir, "dcp.json"), []byte(`{"compress":{"minTokens":100}}`), 0o644); err != nil {
+		t.Fatalf("setup WriteFile: %v", err)
+	}
+
+	result, err := ScaffoldDCP(dir)
+	if err != nil {
+		t.Fatalf("ScaffoldDCP: %v", err)
+	}
+
+	// Should operate on .jsonc (preferred), which has protectTags → skip.
+	if result.Path != "dcp.jsonc" {
+		t.Errorf("path = %q, want %q", result.Path, "dcp.jsonc")
+	}
+	if result.Action != "skipped" {
+		t.Errorf("action = %q, want %q", result.Action, "skipped")
+	}
+}
+
+func TestScaffoldDCP_CreatesOpenCodeDir(t *testing.T) {
+	dir := t.TempDir()
+	// .opencode/ does not exist yet.
+
+	_, err := ScaffoldDCP(dir)
+	if err != nil {
+		t.Fatalf("ScaffoldDCP: %v", err)
+	}
+
+	// Verify .opencode/ directory was created.
+	info, err := os.Stat(filepath.Join(dir, ".opencode"))
+	if err != nil {
+		t.Fatalf(".opencode/ not created: %v", err)
+	}
+	if !info.IsDir() {
+		t.Error(".opencode/ is not a directory")
+	}
+}
+
 func TestSkillTemplates_HaveNameField(t *testing.T) {
 	// Walk the embedded content filesystem and verify every SKILL.md
 	// has a "name: <directory-name>" field in its YAML frontmatter.

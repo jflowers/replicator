@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -27,13 +28,15 @@ type CheckResult struct {
 
 // Run executes all health checks and returns the results.
 // Individual check failures do not stop subsequent checks.
-func Run(store *db.Store, cfg *config.Config) ([]CheckResult, error) {
+// The projectDir parameter is used for per-project checks (e.g., DCP config).
+func Run(store *db.Store, cfg *config.Config, projectDir string) ([]CheckResult, error) {
 	var results []CheckResult
 
 	results = append(results, checkGit())
 	results = append(results, checkDatabase(store))
 	results = append(results, checkDewey(cfg.DeweyURL))
 	results = append(results, checkConfigDir())
+	results = append(results, checkDCPConfig(projectDir))
 
 	return results, nil
 }
@@ -126,6 +129,103 @@ func deweyHealthProbe(deweyURL string) error {
 	})
 	_, err := client.Call("dewey_health", map[string]any{})
 	return err
+}
+
+// checkDCPConfig verifies DCP configuration when protect-tagged commands exist.
+// It scans .opencode/commands/*.md for <protect> tags. If none are found,
+// the check passes (DCP is not needed). If protect tags are found, it checks
+// for .opencode/dcp.jsonc (or dcp.json) with protectTags enabled.
+func checkDCPConfig(projectDir string) CheckResult {
+	start := time.Now()
+
+	cmdDir := filepath.Join(projectDir, ".opencode", "commands")
+	entries, err := os.ReadDir(cmdDir)
+	if err != nil {
+		// No commands directory — no protect tags to worry about.
+		elapsed := time.Since(start)
+		return CheckResult{
+			Name:     "dcp_config",
+			Status:   "pass",
+			Message:  "no protect-tagged commands found",
+			Duration: elapsed,
+		}
+	}
+
+	// Scan command files for <protect> tags.
+	hasProtectTags := false
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		data, readErr := os.ReadFile(filepath.Join(cmdDir, e.Name()))
+		if readErr != nil {
+			continue
+		}
+		if strings.Contains(string(data), "<protect>") {
+			hasProtectTags = true
+			break
+		}
+	}
+
+	if !hasProtectTags {
+		elapsed := time.Since(start)
+		return CheckResult{
+			Name:     "dcp_config",
+			Status:   "pass",
+			Message:  "no protect-tagged commands found",
+			Duration: elapsed,
+		}
+	}
+
+	// Protect tags found — check for DCP config file.
+	jsoncPath := filepath.Join(projectDir, ".opencode", "dcp.jsonc")
+	jsonPath := filepath.Join(projectDir, ".opencode", "dcp.json")
+
+	var configPath string
+	if _, statErr := os.Stat(jsoncPath); statErr == nil {
+		configPath = jsoncPath
+	} else if _, statErr := os.Stat(jsonPath); statErr == nil {
+		configPath = jsonPath
+	}
+
+	if configPath == "" {
+		elapsed := time.Since(start)
+		return CheckResult{
+			Name:     "dcp_config",
+			Status:   "warn",
+			Message:  "protect-tagged commands found but no DCP config; run replicator init",
+			Duration: elapsed,
+		}
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		elapsed := time.Since(start)
+		return CheckResult{
+			Name:     "dcp_config",
+			Status:   "warn",
+			Message:  fmt.Sprintf("cannot read DCP config: %v", err),
+			Duration: elapsed,
+		}
+	}
+
+	if !strings.Contains(string(data), "protectTags") {
+		elapsed := time.Since(start)
+		return CheckResult{
+			Name:     "dcp_config",
+			Status:   "warn",
+			Message:  "DCP config exists but protectTags is not enabled",
+			Duration: elapsed,
+		}
+	}
+
+	elapsed := time.Since(start)
+	return CheckResult{
+		Name:     "dcp_config",
+		Status:   "pass",
+		Message:  "protectTags enabled in DCP config",
+		Duration: elapsed,
+	}
 }
 
 // checkConfigDir verifies the config directory exists.
