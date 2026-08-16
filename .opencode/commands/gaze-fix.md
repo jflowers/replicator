@@ -6,8 +6,9 @@ description: >
   Without arguments: detects active workflow and runs /speckit.implement
   or /opsx-apply.
 ---
-<!-- scaffolded by gaze v1.4.9 -->
+<!-- scaffolded by gaze dev -->
 
+<protect>
 # Command: /gaze fix
 
 ## Description
@@ -183,3 +184,4 @@ Files modified:
 - If a generated test fails: report the failure, suggest the
   assertion may need adjustment, keep the test (failing tests are
   still valuable as documentation of expected behavior)
+</protect>

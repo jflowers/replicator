@@ -1,7 +1,7 @@
 ---
 description: "Shared severity level definitions for all Divisor Council personas."
 ---
-<!-- scaffolded by uf v0.15.0 -->
+<!-- scaffolded by uf vdev -->
 
 # Severity Convention Pack
 

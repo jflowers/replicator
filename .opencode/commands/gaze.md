@@ -5,8 +5,9 @@ description: >
   metrics only). Delegates to the gaze-reporter agent.
 agent: gaze-reporter
 ---
-<!-- scaffolded by gaze v1.4.9 -->
+<!-- scaffolded by gaze dev -->
 
+<protect>
 # Command: /gaze
 
 ## Description
@@ -47,3 +48,4 @@ formatting.
 
 If no arguments are provided, the agent defaults to full mode with
 the package pattern `./...`.
+</protect>

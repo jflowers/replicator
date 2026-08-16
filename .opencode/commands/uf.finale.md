@@ -33,13 +33,15 @@ stays open for human review. Works with both Speckit
 
 ## Instructions
 
+<protect>
+
 **Session-resume guard**: If this session has been
    resumed from compressed context, or if you cannot
    verify that the human explicitly confirmed a gate
    in the current uncompressed conversation history, you
    MUST re-read this entire template, recover state from
    the execution checklist below, and re-confirm any
-   pending gates via the **AskUserQuestion tool** before
+   pending gates via the **question tool** before
    proceeding. Do NOT rely on gate confirmations recorded
    in compressed context. Do NOT infer step completion
    from compressed summaries. When in doubt, re-confirm
@@ -124,7 +126,7 @@ Run `git status --short` to inspect the working tree.
   > Proceed with staging all files? These files will be
   > included in the commit."
 
-  Use the **AskUserQuestion tool** with options
+  Use the **question tool** with options
   `["Yes -- stage all files and continue", "No -- stop here"]`.
 
   - If the user selects **"Yes -- stage all files and
@@ -234,7 +236,7 @@ git status
 in the local branch): warn the user about the divergence
 before presenting the confirmation gate.
 
-Use the **AskUserQuestion tool** with options
+Use the **question tool** with options
 `["Push to remote", "Abort -- keep commits local"]`.
 
 - If the user selects **"Push to remote"**:
@@ -397,7 +399,7 @@ gh pr view --json number,url 2>/dev/null
   > <body>
   > ```
 
-  Use the **AskUserQuestion tool** with options
+  Use the **question tool** with options
   `["Approve — create PR", "Edit title or body",
   "Provide my own title and body", "Abort — do not
   create PR"]`.
@@ -465,7 +467,7 @@ gh pr checks <number> --watch
   > 2. Re-run the checks
   > 3. Stop here and fix manually"
 
-  Use the **AskUserQuestion tool** to ask the user how
+  Use the **question tool** to ask the user how
   to proceed.
 
   >>> END MANDATORY GATE <<<
@@ -543,7 +545,7 @@ conflict to the user and present recovery options:
 > 5. Spawn sub-agent to resolve conflicts
 >    (AI-assisted)"
 
-Use the **AskUserQuestion tool** to ask the user
+Use the **question tool** to ask the user
 which option to take. After the user selects an option,
 update the execution checklist: set
 `CONFLICT_OPTION=<N>` (where N is the selected option
@@ -969,3 +971,5 @@ the OpenSpec and Speckit workflows:
 - All changes are committed before any branch switch
 - The remote branch is NOT deleted — it stays open with
   the PR until a reviewer merges
+
+</protect>
