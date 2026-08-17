@@ -420,6 +420,37 @@ func TestCheckDCPConfig_PassWithJSONAlias(t *testing.T) {
 	}
 }
 
+func TestCheckDCPConfig_WarnUnreadableCommandFile(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("cannot test permission denial as root")
+	}
+	dir := t.TempDir()
+	cmdDir := filepath.Join(dir, ".opencode", "commands")
+	if err := os.MkdirAll(cmdDir, 0o755); err != nil {
+		t.Fatalf("setup MkdirAll: %v", err)
+	}
+	// Create DCP config with protectTags so we reach the command scan.
+	if err := os.WriteFile(filepath.Join(dir, ".opencode", "dcp.jsonc"), []byte(`{"compress":{"protectTags":true}}`), 0o644); err != nil {
+		t.Fatalf("setup WriteFile dcp: %v", err)
+	}
+	// Create an unreadable command file.
+	cmdFile := filepath.Join(cmdDir, "broken.md")
+	if err := os.WriteFile(cmdFile, []byte("<protect>"), 0o000); err != nil {
+		t.Fatalf("setup WriteFile cmd: %v", err)
+	}
+
+	result := checkDCPConfig(dir)
+	if result.Status != "warn" {
+		t.Errorf("status = %q, want %q", result.Status, "warn")
+	}
+	if !strings.Contains(result.Message, "cannot read command file") {
+		t.Errorf("message = %q, want it to contain %q", result.Message, "cannot read command file")
+	}
+	if !strings.Contains(result.Message, "broken.md") {
+		t.Errorf("message = %q, want it to contain file name %q", result.Message, "broken.md")
+	}
+}
+
 func TestCheckResult_StatusValues(t *testing.T) {
 	// Verify that all results use valid status values.
 	store := testStore(t)
