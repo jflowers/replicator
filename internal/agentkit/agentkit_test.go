@@ -1150,11 +1150,11 @@ func TestScaffoldDCP_ExistingWithoutProtectTags(t *testing.T) {
 		t.Fatalf("ScaffoldDCP: %v", err)
 	}
 
-	if result.Action != "updated" {
-		t.Errorf("action = %q, want %q", result.Action, "updated")
+	if result.Action != "overwritten" {
+		t.Errorf("action = %q, want %q", result.Action, "overwritten")
 	}
 
-	// Verify file was replaced with canonical content containing protectTags.
+	// Verify file was overwritten with canonical content containing protectTags.
 	data, err := os.ReadFile(filepath.Join(dcpDir, "dcp.jsonc"))
 	if err != nil {
 		t.Fatalf("read dcp.jsonc: %v", err)
@@ -1187,11 +1187,11 @@ func TestScaffoldDCP_JSONAlias(t *testing.T) {
 	if result.Path != "dcp.json" {
 		t.Errorf("path = %q, want %q", result.Path, "dcp.json")
 	}
-	if result.Action != "updated" {
-		t.Errorf("action = %q, want %q", result.Action, "updated")
+	if result.Action != "overwritten" {
+		t.Errorf("action = %q, want %q", result.Action, "overwritten")
 	}
 
-	// Verify .json file was updated (not a new .jsonc created).
+	// Verify .json file was overwritten (not a new .jsonc created).
 	data, err := os.ReadFile(filepath.Join(dcpDir, "dcp.json"))
 	if err != nil {
 		t.Fatalf("read dcp.json: %v", err)

@@ -33,9 +33,11 @@ global database (replicator setup) or any external services.`,
 	return cmd
 }
 
-// runInit creates the .uf/replicator/ directory, seeds cells.json, and
-// scaffolds the agent kit into .opencode/. Uses styled output: green for
-// created, dim for skipped, yellow for overwritten.
+// runInit creates the .uf/replicator/ directory, seeds cells.json,
+// scaffolds the agent kit into .opencode/, and creates or updates the
+// DCP configuration (.opencode/dcp.jsonc) for protect tag support.
+// Uses styled output: green for created, dim for skipped, yellow for
+// overwritten.
 func runInit(targetDir string, force bool) error {
 	styles := ui.NewStyles(os.Stdout)
 	replicatorDir := filepath.Join(targetDir, ".uf", "replicator")
@@ -86,8 +88,8 @@ func runInit(targetDir string, force bool) error {
 		fmt.Println(styles.Pass.Render(fmt.Sprintf("created .opencode/%s", dcpResult.Path)))
 	case "skipped":
 		fmt.Println(styles.Dim.Render(fmt.Sprintf("skipped .opencode/%s (exists)", dcpResult.Path)))
-	case "updated":
-		fmt.Println(styles.Warn.Render(fmt.Sprintf("updated .opencode/%s (added protectTags)", dcpResult.Path)))
+	case "overwritten":
+		fmt.Println(styles.Warn.Render(fmt.Sprintf("overwritten .opencode/%s (added protectTags)", dcpResult.Path)))
 	}
 
 	return nil

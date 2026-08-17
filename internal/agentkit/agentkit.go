@@ -37,11 +37,11 @@ const dcpConfigContent = `{
 }
 `
 
-// ScaffoldDCP creates or updates the DCP configuration file in
+// ScaffoldDCP creates or overwrites the DCP configuration file in
 // targetDir/.opencode/. It checks for dcp.jsonc first, then dcp.json.
 // If neither exists, it creates dcp.jsonc. If one exists with protectTags
 // already configured, it is skipped. If one exists without protectTags,
-// the file is replaced with the canonical DCP config content.
+// the file is overwritten with the canonical DCP config content.
 func ScaffoldDCP(targetDir string) (ScaffoldResult, error) {
 	openCodeDir := filepath.Join(targetDir, ".opencode")
 	jsoncPath := filepath.Join(openCodeDir, "dcp.jsonc")
@@ -72,7 +72,7 @@ func ScaffoldDCP(targetDir string) (ScaffoldResult, error) {
 		if err := os.WriteFile(existingPath, []byte(dcpConfigContent), 0o644); err != nil {
 			return ScaffoldResult{}, fmt.Errorf("write %s: %w", fileName, err)
 		}
-		return ScaffoldResult{Path: fileName, Action: "updated"}, nil
+		return ScaffoldResult{Path: fileName, Action: "overwritten"}, nil
 	}
 
 	// Neither file exists — create .opencode/dcp.jsonc.
