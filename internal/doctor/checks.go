@@ -159,7 +159,13 @@ func checkDCPConfig(projectDir string) CheckResult {
 		}
 		data, readErr := os.ReadFile(filepath.Join(cmdDir, e.Name()))
 		if readErr != nil {
-			continue
+			elapsed := time.Since(start)
+			return CheckResult{
+				Name:     "dcp_config",
+				Status:   "warn",
+				Message:  fmt.Sprintf("cannot read command file %s: %v", e.Name(), readErr),
+				Duration: elapsed,
+			}
 		}
 		if strings.Contains(string(data), "<protect>") {
 			hasProtectTags = true
