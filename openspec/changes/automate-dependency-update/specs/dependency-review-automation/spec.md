@@ -22,13 +22,21 @@ Every reusable workflow and action reference MUST be pinned to a verified full 4
 
 For pull requests authored by `dependabot[bot]`, the workflow MUST create or replace one standardized review comment containing the general review conclusion, calculated risk, dependency name and version, release age, and a link to the workflow logs.
 
-The summary MUST state whether automated approval was eligible. Unknown, malformed, or unavailable review signals MUST be represented as requiring manual review rather than as passing signals.
+The reporting job MUST run for Dependabot pull requests even when either reusable review job fails or is cancelled. The summary MUST state whether the update is eligible for automated approval pending live review-state validation; it MUST NOT claim that approval occurred. Unknown, malformed, unavailable, failed, or cancelled review signals MUST be represented as requiring manual review rather than as passing signals.
 
 #### Scenario: Safe update receives an auditable summary
 - **GIVEN** a Dependabot pull request has completed both reusable review jobs
 - **WHEN** the reporting job runs
-- **THEN** it MUST publish one standardized comment containing the review evidence and approval outcome
+- **THEN** it MUST publish one standardized comment containing the review evidence and approval eligibility
+- **AND** the eligibility text MUST state that live review-state validation is still pending
 - **AND** a rerun MUST replace that comment rather than add a duplicate
+
+#### Scenario: Failed reviewer still produces a manual-review summary
+- **GIVEN** a Dependabot pull request for which either reusable review job fails or is cancelled
+- **WHEN** dependent jobs are evaluated
+- **THEN** the reporting job MUST still run
+- **AND** it MUST publish a summary that identifies the unavailable result and requires manual review
+- **AND** the approval job MUST NOT submit an approving review
 
 #### Scenario: Missing release metadata requires manual review
 - **GIVEN** a Dependabot pull request has an unknown or unavailable release age
@@ -48,15 +56,15 @@ The workflow MUST auto-approve a Dependabot pull request only when all of the fo
 - The general dependency review conclusion is successful.
 - The calculated risk is not high.
 - The release age is known, parseable, and at least 24 hours.
-- No review from a non-bot user is currently in the `CHANGES_REQUESTED` state.
+- No non-bot reviewer has `CHANGES_REQUESTED` as that reviewer's latest effective review state.
 
-The approval job MUST fail closed when any required condition is missing, malformed, or false. It MUST NOT merge the pull request, enable auto-merge, dismiss reviews, alter branch protection, or bypass required status checks or code-owner review.
+The approval job MUST fail closed when any required condition is missing, malformed, unavailable due to a failed or cancelled dependency, or false. To determine a human veto, it MUST group reviews by non-bot reviewer, order each reviewer's records chronologically, and evaluate that reviewer's latest decisive state. A later `APPROVED` review from the same reviewer MUST clear that reviewer's earlier `CHANGES_REQUESTED` state; a `DISMISSED` latest state MUST also clear it, while `COMMENTED` records MUST NOT replace the latest decisive state. It MUST NOT merge the pull request, enable auto-merge, dismiss reviews, alter branch protection, or bypass required status checks or code-owner review.
 
 #### Scenario: Eligible update is approved
 - **GIVEN** a Dependabot pull request has a successful dependency review
 - **AND** its calculated risk is low or medium
 - **AND** its release age is known and at least 24 hours
-- **AND** no non-bot user has requested changes
+- **AND** no non-bot reviewer's latest effective state is `CHANGES_REQUESTED`
 - **WHEN** the approval job runs
 - **THEN** the workflow MUST submit an approving review containing the decision evidence
 - **AND** it MUST NOT merge or enable auto-merge for the pull request
@@ -76,6 +84,23 @@ The approval job MUST fail closed when any required condition is missing, malfor
 - **GIVEN** a non-bot reviewer has an active `CHANGES_REQUESTED` review on a Dependabot pull request
 - **WHEN** the approval job evaluates existing reviews
 - **THEN** it MUST NOT submit an approving review
+
+#### Scenario: Later human approval clears an earlier veto
+- **GIVEN** a non-bot reviewer requested changes and later approved the same Dependabot pull request
+- **WHEN** the approval job evaluates that reviewer's chronologically latest decisive review state
+- **THEN** the earlier request for changes MUST NOT block automated approval
+- **AND** all other approval conditions MUST still pass before an approving review is submitted
+
+#### Scenario: Dismissed human review clears an earlier veto
+- **GIVEN** a non-bot reviewer's request for changes was dismissed
+- **WHEN** the approval job evaluates that reviewer's latest effective review state
+- **THEN** the dismissed request for changes MUST NOT block automated approval
+- **AND** all other approval conditions MUST still pass before an approving review is submitted
+
+#### Scenario: Later human comment does not clear an active veto
+- **GIVEN** a non-bot reviewer requested changes and later submitted a `COMMENTED` review
+- **WHEN** the approval job evaluates that reviewer's latest decisive review state
+- **THEN** the active request for changes MUST continue to block automated approval
 
 #### Scenario: Invalid approval signal fails closed
 - **GIVEN** risk, review conclusion, or release-age output is missing or malformed

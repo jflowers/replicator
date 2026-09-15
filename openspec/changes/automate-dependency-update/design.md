@@ -58,23 +58,25 @@ All `uses` references will be pinned to implementation-time-verified 40-characte
 
 The approval step's outer expression will gate obvious ineligible cases: general review must equal `success`, risk must be neither `high` nor empty, and release age must be present and at least 24 hours. The script will receive reviewer outputs through environment variables rather than interpolate them into JavaScript source.
 
-The script will validate the expected values again, list pull-request reviews, and return without approval when any non-bot user has requested changes. This second validation keeps malformed values and API-derived vetoes on the fail-closed path. The created review body will include risk, review conclusion, and release age as decision evidence.
+The script will validate the expected values again and list pull-request reviews. It will group non-bot reviews by reviewer login, sort them chronologically, ignore non-decisive `COMMENTED` records, and evaluate each reviewer's latest decisive state. A latest `CHANGES_REQUESTED` state blocks approval; a later `APPROVED` or `DISMISSED` state clears that reviewer's earlier veto. This second validation keeps malformed values and current API-derived vetoes on the fail-closed path. The created review body will include risk, review conclusion, and release age as decision evidence.
 
 ### 5. Keep reporting idempotent and explicit
 
-The reporting job will use `create-or-update-comment` with `edit-mode: replace`. Its table will include the general review conclusion, calculated risk, dependency name/version, release age, and workflow-log link. The approval summary will say `Approved` only when the static reviewer predicates are eligible; unknown release age or any failed predicate will say `Manual review required`.
+The reporting job will use `create-or-update-comment` with `edit-mode: replace` and a job condition equivalent to `always()` plus the Dependabot pull-request guard. It therefore runs when either reusable reviewer fails or is cancelled. Its table will include the general review conclusion, calculated risk, dependency name/version, release age, and workflow-log link, substituting explicit unavailable values for absent outputs. When static predicates pass, the summary will say `Eligible for automated approval pending live review-state validation`; it will never claim that approval occurred. Unknown release age, failed dependencies, absent outputs, or any failed predicate will say `Manual review required`.
 
-The comment cannot know the result of the subsequent live human-review lookup without coupling the jobs. Therefore, the approval script and its logs are authoritative for the human-veto decision; the comment describes reviewer-output eligibility and directs maintainers to the run logs. No second parent comment is introduced.
+The approval script and the resulting GitHub review are authoritative for the live human-veto decision. The comment describes reviewer-output eligibility only and directs maintainers to the run logs. No second parent comment is introduced, and the approval job remains unable to run successfully when either reusable reviewer fails or is cancelled.
 
 ### 6. Verify structure locally and behavior after activation
 
 Before completion, implementation will:
 
+- Add an automated offline regression test before the workflow implementation and confirm that it initially fails.
+- Make the test parse or structurally evaluate `ci_dependencies.yml` and exercise fixtures for eligible updates, high-risk or vulnerable updates, releases younger than 24 hours, missing or malformed outputs, failed or cancelled reviewer jobs, non-Dependabot authors, idempotent reporting, active human vetoes, later approvals that clear earlier vetoes, dismissed vetoes, and comments that do not clear active vetoes.
 - Run a pinned workflow linter or equivalent parser against `ci_dependencies.yml`.
-- Assert the expected triggers, four jobs, actor guards, output wiring, permission blocks, 24-hour threshold, fail-closed predicates, human-review lookup, and absence of merge commands.
+- Assert the expected triggers, four jobs, actor guards, output wiring, permission blocks, `always()` reporting behavior, 24-hour threshold, fail-closed predicates, latest-effective-review lookup, eligibility wording, and absence of merge commands.
 - Re-resolve every tag-to-SHA mapping and compare it with the written references.
 - Run the repository's CI-equivalent commands derived from `.github/workflows/ci.yml`, including vet, pinned `govulncheck`, Homebrew script tests, race-enabled Go tests, coverage ratchets, and build.
-- Run `openspec validate automate-dependency-updates`.
+- Run `openspec validate automate-dependency-update`.
 
 After the workflow is pushed, maintainers will verify one normal pull request and representative Dependabot outcomes through GitHub Actions. GitHub-hosted comment and approval mutations cannot be executed in an isolated local test, so activation evidence must be recorded in the implementing pull request rather than simulated with live external writes during local tests.
 
