@@ -1,0 +1,264 @@
+# Dependencies
+# --
+# Reviews dependency updates and gates Dependabot approval on
+# low-risk releases that are at least 24 hours old.
+
+name: Dependencies
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  issues: none
+  pull-requests: none
+
+env:
+  MIN_RELEASE_AGE_HOURS: 24
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  call_deps_reviewer:
+    name: General
+    uses: complytime/org-infra/.github/workflows/reusable_deps_reviewer.yml@bd3718a218d649b093269fe4a979c4a4632dfad2 # v0.8.0
+    permissions:
+      contents: read
+      issues: none
+      pull-requests: none
+
+  call_dependabot_reviewer:
+    name: Dependabot
+    uses: complytime/org-infra/.github/workflows/reusable_dependabot_reviewer.yml@bd3718a218d649b093269fe4a979c4a4632dfad2 # v0.8.0
+    permissions:
+      contents: read
+      issues: none
+      pull-requests: none
+
+  comment_on_dependabot_prs:
+    name: Dependabot Comment
+    if: >-
+      always()
+      && github.event_name == 'pull_request'
+      && github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    needs: [call_deps_reviewer, call_dependabot_reviewer]
+    permissions:
+      issues: read
+      pull-requests: write
+    steps:
+      - name: Prepare dependency review report
+        id: prepare_report
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          DEPS_REVIEW_RESULT: ${{ needs.call_deps_reviewer.result }}
+          REVIEW_CONCLUSION: ${{ needs.call_deps_reviewer.outputs.review_conclusion }}
+          DEPENDABOT_REVIEW_RESULT: ${{ needs.call_dependabot_reviewer.result }}
+          RISK: ${{ needs.call_dependabot_reviewer.outputs.risk_level }}
+          DEPENDENCY: ${{ needs.call_dependabot_reviewer.outputs.dep_name }}
+          VERSION: ${{ needs.call_dependabot_reviewer.outputs.dep_version }}
+          RELEASE_AGE: ${{ needs.call_dependabot_reviewer.outputs.release_age_hours }}
+          MIN_RELEASE_AGE_HOURS: ${{ env.MIN_RELEASE_AGE_HOURS }}
+        with:
+          script: |
+            const unavailable = 'unavailable';
+            const valueOrUnavailable = (value) => value && value.trim() ? value.trim() : unavailable;
+            const depsReviewSucceeded = process.env.DEPS_REVIEW_RESULT === 'success';
+            const dependabotReviewSucceeded = process.env.DEPENDABOT_REVIEW_RESULT === 'success';
+            const reviewConclusion = depsReviewSucceeded
+              ? valueOrUnavailable(process.env.REVIEW_CONCLUSION)
+              : unavailable;
+            const risk = dependabotReviewSucceeded
+              ? valueOrUnavailable(process.env.RISK)
+              : unavailable;
+            const dependency = dependabotReviewSucceeded
+              ? valueOrUnavailable(process.env.DEPENDENCY)
+              : unavailable;
+            const version = dependabotReviewSucceeded
+              ? valueOrUnavailable(process.env.VERSION)
+              : unavailable;
+            const releaseAgeInput = dependabotReviewSucceeded
+              ? valueOrUnavailable(process.env.RELEASE_AGE)
+              : unavailable;
+            const releaseAge = /^\d+(?:\.\d+)?$/.test(releaseAgeInput)
+              ? Number(releaseAgeInput)
+              : Number.NaN;
+            const minimumReleaseAge = Number(process.env.MIN_RELEASE_AGE_HOURS);
+            const eligible = depsReviewSucceeded
+              && dependabotReviewSucceeded
+              && reviewConclusion === 'success'
+              && (risk === 'low' || risk === 'medium')
+              && dependency !== unavailable
+              && version !== unavailable
+              && Number.isFinite(releaseAge)
+              && Number.isFinite(minimumReleaseAge)
+              && releaseAge >= minimumReleaseAge;
+
+            core.setOutput('review-conclusion', reviewConclusion);
+            core.setOutput('risk', risk);
+            core.setOutput('dependency', dependency);
+            core.setOutput('version', version);
+            core.setOutput('release-age', Number.isFinite(releaseAge) ? `${releaseAge} hours` : unavailable);
+            core.setOutput(
+              'eligibility',
+              eligible
+                ? 'Eligible for automated approval pending live review-state validation'
+                : 'Manual review required',
+            );
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existingReport = comments.find((comment) =>
+              comment.user?.login === 'github-actions[bot]'
+              && comment.body?.includes('<!-- dependency-review-report -->')
+            );
+            core.setOutput('comment-id', existingReport ? String(existingReport.id) : '');
+
+      - name: Publish dependency review report
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-id: ${{ steps.prepare_report.outputs.comment-id }}
+          edit-mode: replace
+          body: |
+            <!-- dependency-review-report -->
+            ## Standardized Dependabot Review Summary
+
+            | Evidence | Value |
+            | --- | --- |
+            | Dependency review conclusion | `${{ steps.prepare_report.outputs.review-conclusion }}` |
+            | Risk | `${{ steps.prepare_report.outputs.risk }}` |
+            | Dependency | `${{ steps.prepare_report.outputs.dependency }}` |
+            | Version | `${{ steps.prepare_report.outputs.version }}` |
+            | Release age | `${{ steps.prepare_report.outputs.release-age }}` |
+            | Workflow logs | [View run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
+
+            **${{ steps.prepare_report.outputs.eligibility }}**
+
+  approve_dependabot_prs:
+    name: Dependabot Approval
+    if: >-
+      always()
+      && github.event_name == 'pull_request'
+      && github.event.pull_request.user.login == 'dependabot[bot]'
+      && needs.call_deps_reviewer.result == 'success'
+      && needs.call_dependabot_reviewer.result == 'success'
+      && needs.call_deps_reviewer.outputs.review_conclusion == 'success'
+      && needs.call_dependabot_reviewer.outputs.risk_level != ''
+      && needs.call_dependabot_reviewer.outputs.risk_level != 'high'
+      && needs.call_dependabot_reviewer.outputs.release_age_hours != ''
+      && fromJSON(needs.call_dependabot_reviewer.outputs.release_age_hours) >= 24
+    runs-on: ubuntu-latest
+    needs: [call_deps_reviewer, call_dependabot_reviewer]
+    permissions:
+      pull-requests: write
+    env:
+      MIN_RELEASE_AGE_HOURS: 24
+    steps:
+      - name: Validate review state and approve
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          DEPS_REVIEW_RESULT: ${{ needs.call_deps_reviewer.result }}
+          REVIEW_CONCLUSION: ${{ needs.call_deps_reviewer.outputs.review_conclusion }}
+          DEPENDABOT_REVIEW_RESULT: ${{ needs.call_dependabot_reviewer.result }}
+          RISK: ${{ needs.call_dependabot_reviewer.outputs.risk_level }}
+          DEPENDENCY: ${{ needs.call_dependabot_reviewer.outputs.dep_name }}
+          VERSION: ${{ needs.call_dependabot_reviewer.outputs.dep_version }}
+          RELEASE_AGE: ${{ needs.call_dependabot_reviewer.outputs.release_age_hours }}
+          MIN_RELEASE_AGE_HOURS: ${{ env.MIN_RELEASE_AGE_HOURS }}
+        with:
+          script: |
+            const eventName = (process.env.EVENT_NAME || '').trim();
+            const author = (process.env.PR_AUTHOR || '').trim();
+            const depsReviewResult = (process.env.DEPS_REVIEW_RESULT || '').trim();
+            const reviewConclusion = (process.env.REVIEW_CONCLUSION || '').trim();
+            const dependabotReviewResult = (process.env.DEPENDABOT_REVIEW_RESULT || '').trim();
+            const risk = (process.env.RISK || '').trim();
+            const dependency = (process.env.DEPENDENCY || '').trim() || 'unavailable';
+            const version = (process.env.VERSION || '').trim() || 'unavailable';
+            const releaseAgeInput = (process.env.RELEASE_AGE || '').trim();
+            const minimumReleaseAgeInput = (process.env.MIN_RELEASE_AGE_HOURS || '').trim();
+            const releaseAge = Number(releaseAgeInput);
+            const minimumReleaseAge = Number(minimumReleaseAgeInput);
+            const validReleaseAge = releaseAgeInput !== '' && Number.isFinite(releaseAge);
+            const validMinimumReleaseAge = minimumReleaseAgeInput !== '' && Number.isFinite(minimumReleaseAge);
+            const validRisk = risk === 'low' || risk === 'medium';
+
+            const staticSignalsAreSafe = eventName === 'pull_request'
+              && author === 'dependabot[bot]'
+              && depsReviewResult === 'success'
+              && reviewConclusion === 'success'
+              && dependabotReviewResult === 'success'
+              && validRisk
+              && validReleaseAge
+              && validMinimumReleaseAge
+              && releaseAge >= minimumReleaseAge;
+            if (!staticSignalsAreSafe) {
+              core.setFailed('Manual review required: dependency approval signals are incomplete or unsafe.');
+              throw new Error('Dependency approval signals are incomplete or unsafe.');
+            }
+
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              per_page: 100,
+            });
+            const reviewsByHuman = new Map();
+            for (const review of reviews) {
+              const login = review.user?.login;
+              const isBot = review.user?.type === 'Bot' || login?.toLowerCase().endsWith('[bot]');
+              if (!login || isBot) {
+                continue;
+              }
+              const key = login.toLowerCase();
+              const reviewerReviews = reviewsByHuman.get(key) || [];
+              reviewerReviews.push(review);
+              reviewsByHuman.set(key, reviewerReviews);
+            }
+
+            const activeVetoes = [];
+            for (const reviewerReviews of reviewsByHuman.values()) {
+              reviewerReviews.sort((left, right) => {
+                const timeDifference = (Date.parse(left.submitted_at) || 0) - (Date.parse(right.submitted_at) || 0);
+                return timeDifference || Number(left.id || 0) - Number(right.id || 0);
+              });
+              const decisiveReviews = reviewerReviews.filter((review) =>
+                review.state === 'CHANGES_REQUESTED'
+                || review.state === 'APPROVED'
+                || review.state === 'DISMISSED'
+              );
+              const latestEffectiveReview = decisiveReviews.at(-1);
+              if (latestEffectiveReview?.state === 'CHANGES_REQUESTED') {
+                activeVetoes.push(latestEffectiveReview.user.login);
+              }
+            }
+            if (activeVetoes.length > 0) {
+              core.setFailed(`Manual review required: active change requests from ${activeVetoes.join(', ')}.`);
+              throw new Error('An active human change request blocks automated approval.');
+            }
+
+            await github.rest.pulls.createReview({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              event: 'APPROVE',
+              body: [
+                'Automated dependency approval after static and live review-state validation.',
+                `Dependency: ${dependency}@${version}`,
+                `Dependency review result: ${depsReviewResult}`,
+                `Dependency review conclusion: ${reviewConclusion}`,
+                `Risk: ${risk}`,
+                `Release age: ${releaseAge} hours (minimum: ${minimumReleaseAge} hours)`,
+              ].join('\n'),
+            });
