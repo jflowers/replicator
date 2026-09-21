@@ -555,7 +555,7 @@ const console = {log: () => {}, error: () => {}, warn: () => {}};
 `, indent(script, "    "))
 
 	command := exec.Command(nodePath, "-e", harness)
-	command.Env = append(policyEnvironment(os.Environ(), fixture), "POLICY_FIXTURE="+string(fixtureJSON))
+	command.Env = append(policyEnvironment(fixture), "POLICY_FIXTURE="+string(fixtureJSON))
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("execute approval github-script policy: %v\n%s", err, output)
@@ -613,7 +613,7 @@ const core = {
 `, indent(script, "    "))
 
 	command := exec.Command(nodePath, "-e", harness)
-	command.Env = append(reportEnvironment(os.Environ(), fixture), "REPORT_FIXTURE="+string(fixtureJSON))
+	command.Env = append(reportEnvironment(fixture), "REPORT_FIXTURE="+string(fixtureJSON))
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("execute report github-script policy: %v\n%s", err, output)
@@ -640,7 +640,7 @@ func requireNode(t *testing.T) string {
 	return nodePath
 }
 
-func policyEnvironment(base []string, fixture policyFixture) []string {
+func policyEnvironment(fixture policyFixture) []string {
 	reviewConclusion := fixture.reviewConclusion
 	if reviewConclusion == "" && !fixture.omitReviewConclusion {
 		reviewConclusion = fixture.depsReviewResult
@@ -657,13 +657,7 @@ func policyEnvironment(base []string, fixture policyFixture) []string {
 		"RELEASE_AGE":              fixture.releaseAge,
 		"MIN_RELEASE_AGE_HOURS":    "24",
 	}
-	environment := make([]string, 0, len(base)+len(values))
-	for _, value := range base {
-		name, _, _ := strings.Cut(value, "=")
-		if _, replaced := values[name]; !replaced && name != "POLICY_FIXTURE" {
-			environment = append(environment, value)
-		}
-	}
+	environment := make([]string, 0, len(values))
 	for name, value := range values {
 		if value != "" {
 			environment = append(environment, name+"="+value)
@@ -673,20 +667,16 @@ func policyEnvironment(base []string, fixture policyFixture) []string {
 }
 
 func TestPolicyEnvironment_ReplacesApprovalScriptInputs(t *testing.T) {
-	environment := policyEnvironment([]string{
-		"DEPENDENCY=host-dependency",
-		"VERSION=host-version",
-		"UNRELATED=value",
-	}, policyFixture{})
+	environment := policyEnvironment(policyFixture{})
 
 	for _, value := range environment {
-		if value == "DEPENDENCY=host-dependency" || value == "VERSION=host-version" {
+		if value == "DEPENDENCY=host-dependency" || value == "VERSION=host-version" || value == "UNRELATED=value" {
 			t.Errorf("policy environment leaks host approval-script input %q", value)
 		}
 	}
 }
 
-func reportEnvironment(base []string, fixture reportFixture) []string {
+func reportEnvironment(fixture reportFixture) []string {
 	values := map[string]string{
 		"DEPS_REVIEW_RESULT":       fixture.depsReviewResult,
 		"REVIEW_CONCLUSION":        fixture.reviewConclusion,
@@ -697,13 +687,7 @@ func reportEnvironment(base []string, fixture reportFixture) []string {
 		"RELEASE_AGE":              fixture.releaseAge,
 		"MIN_RELEASE_AGE_HOURS":    "24",
 	}
-	environment := make([]string, 0, len(base)+len(values))
-	for _, value := range base {
-		name, _, _ := strings.Cut(value, "=")
-		if _, replaced := values[name]; !replaced && name != "REPORT_FIXTURE" {
-			environment = append(environment, value)
-		}
-	}
+	environment := make([]string, 0, len(values))
 	for name, value := range values {
 		if value != "" {
 			environment = append(environment, name+"="+value)
