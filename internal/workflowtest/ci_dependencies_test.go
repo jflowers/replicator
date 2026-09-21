@@ -56,6 +56,7 @@ type scriptResult struct {
 	Failures []string          `json:"failures"`
 	Thrown   string            `json:"thrown"`
 	Outputs  map[string]string `json:"outputs"`
+	Sentinel string            `json:"sentinel"`
 }
 
 type reportFixture struct {
@@ -673,6 +674,22 @@ func TestPolicyEnvironment_ReplacesApprovalScriptInputs(t *testing.T) {
 		if value == "DEPENDENCY=host-dependency" || value == "VERSION=host-version" || value == "UNRELATED=value" {
 			t.Errorf("policy environment leaks host approval-script input %q", value)
 		}
+	}
+}
+
+func TestWorkflowScriptHarnesses_DoNotInheritHostEnvironment(t *testing.T) {
+	t.Setenv("WORKFLOWTEST_HOST_SENTINEL", "must-not-reach-node")
+	workflow := readDependencyWorkflow(t)
+	approvalScript := yamlLiteralBlock(t, yamlSection(t, workflow, "approve_dependabot_prs", 2), "script")
+	reportScript := yamlLiteralBlock(t, yamlSection(t, workflow, "comment_on_dependabot_prs", 2), "script")
+
+	approvalResult := executeApprovalScript(t, approvalScript, policyFixture{})
+	if approvalResult.Sentinel != "" {
+		t.Errorf("approval harness inherited host sentinel %q", approvalResult.Sentinel)
+	}
+	reportResult := executeReportScript(t, reportScript, reportFixture{})
+	if reportResult.Sentinel != "" {
+		t.Errorf("report harness inherited host sentinel %q", reportResult.Sentinel)
 	}
 }
 
