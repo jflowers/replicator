@@ -550,7 +550,7 @@ const console = {log: () => {}, error: () => {}, warn: () => {}};
   } catch (error) {
     thrown = String(error && error.message ? error.message : error);
   }
-  process.stdout.write(JSON.stringify({approvals, failures, thrown}));
+  process.stdout.write(JSON.stringify({approvals, failures, thrown, sentinel: process.env.WORKFLOWTEST_HOST_SENTINEL || ""}));
 })();
 `, indent(script, "    "))
 
@@ -608,7 +608,7 @@ const core = {
   } catch (error) {
     thrown = String(error && error.message ? error.message : error);
   }
-  process.stdout.write(JSON.stringify({failures, outputs, thrown}));
+  process.stdout.write(JSON.stringify({failures, outputs, thrown, sentinel: process.env.WORKFLOWTEST_HOST_SENTINEL || ""}));
 })();
 `, indent(script, "    "))
 
