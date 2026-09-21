@@ -145,6 +145,7 @@ jobs:
 
   approve_dependabot_prs:
     name: Dependabot Approval
+    # The job-level literal must match MIN_RELEASE_AGE_HOURS; env.* is unavailable here.
     if: >-
       always()
       && github.event_name == 'pull_request'

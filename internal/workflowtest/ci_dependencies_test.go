@@ -30,6 +30,8 @@ type policyFixture struct {
 	dependabotReviewResult string
 	risk                   string
 	releaseAge             string
+	dependency             string
+	version                string
 	reviews                []reviewFixture
 	wantApproval           bool
 }
@@ -163,7 +165,7 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 		{
 			name:   "eligible update",
 			author: dependabotAuthor, depsReviewResult: "success", dependabotReviewResult: "success",
-			risk: "low", releaseAge: "24", wantApproval: true,
+			risk: "low", releaseAge: "24", dependency: "example.org/module", version: "1.2.3", wantApproval: true,
 		},
 		{
 			name:   "high risk update",
@@ -245,7 +247,7 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 		{
 			name:   "later APPROVED clears veto",
 			author: dependabotAuthor, depsReviewResult: "success", dependabotReviewResult: "success",
-			risk: "low", releaseAge: "48", wantApproval: true,
+			risk: "low", releaseAge: "48", dependency: "example.org/module", version: "1.2.3", wantApproval: true,
 			reviews: []reviewFixture{
 				review(1, "alice", "User", "CHANGES_REQUESTED", "2026-09-15T08:00:00Z"),
 				review(2, "alice", "User", "APPROVED", "2026-09-15T09:00:00Z"),
@@ -254,7 +256,7 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 		{
 			name:   "DISMISSED clears veto",
 			author: dependabotAuthor, depsReviewResult: "success", dependabotReviewResult: "success",
-			risk: "medium", releaseAge: "48", wantApproval: true,
+			risk: "medium", releaseAge: "48", dependency: "example.org/module", version: "1.2.3", wantApproval: true,
 			reviews: []reviewFixture{
 				review(1, "alice", "User", "CHANGES_REQUESTED", "2026-09-15T08:00:00Z"),
 				review(2, "alice", "User", "DISMISSED", "2026-09-15T09:00:00Z"),
@@ -294,7 +296,7 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 			if approval.Event != "APPROVE" {
 				t.Errorf("review event = %q, want APPROVE", approval.Event)
 			}
-			for _, evidence := range []string{fixture.depsReviewResult, fixture.risk, fixture.releaseAge} {
+			for _, evidence := range []string{fixture.depsReviewResult, fixture.risk, fixture.releaseAge, fixture.dependency, fixture.version} {
 				if !strings.Contains(approval.Body, evidence) {
 					t.Errorf("approval body %q does not contain decision evidence %q", approval.Body, evidence)
 				}
@@ -316,6 +318,14 @@ func TestCIDependenciesWorkflow_ReportScriptEvaluatesPolicyFixtures(t *testing.T
 			wantEligibility:      "Eligible for automated approval pending live review-state validation",
 			wantReviewConclusion: "success", wantRisk: "low", wantDependency: "example.org/module",
 			wantVersion: "1.2.3", wantReleaseAge: "24 hours",
+		},
+		{
+			name: "eligible medium risk update", depsReviewResult: "success", reviewConclusion: "success",
+			dependabotReviewResult: "success", risk: "medium", dependency: "example.org/module",
+			version: "1.2.3", releaseAge: "48",
+			wantEligibility:      "Eligible for automated approval pending live review-state validation",
+			wantReviewConclusion: "success", wantRisk: "medium", wantDependency: "example.org/module",
+			wantVersion: "1.2.3", wantReleaseAge: "48 hours",
 		},
 		{
 			name: "high risk update", depsReviewResult: "success", reviewConclusion: "success",
@@ -474,7 +484,7 @@ func readDependencyWorkflow(t *testing.T) string {
 	t.Helper()
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
-		t.Fatal("locate regression test source")
+		t.Fatal("runtime.Caller: could not determine test source path")
 	}
 	path := filepath.Join(filepath.Dir(currentFile), "..", "..", ".github", "workflows", "ci_dependencies.yml")
 	content, err := os.ReadFile(path)
@@ -631,24 +641,6 @@ func requireNode(t *testing.T) string {
 }
 
 func policyEnvironment(base []string, fixture policyFixture) []string {
-	policyNames := map[string]bool{
-		"EVENT_NAME":               true,
-		"PR_AUTHOR":                true,
-		"DEPS_REVIEW_RESULT":       true,
-		"REVIEW_CONCLUSION":        true,
-		"DEPENDABOT_REVIEW_RESULT": true,
-		"RISK":                     true,
-		"RELEASE_AGE":              true,
-		"MIN_RELEASE_AGE_HOURS":    true,
-		"POLICY_FIXTURE":           true,
-	}
-	environment := make([]string, 0, len(base)+8)
-	for _, value := range base {
-		name, _, _ := strings.Cut(value, "=")
-		if !policyNames[name] {
-			environment = append(environment, value)
-		}
-	}
 	reviewConclusion := fixture.reviewConclusion
 	if reviewConclusion == "" && !fixture.omitReviewConclusion {
 		reviewConclusion = fixture.depsReviewResult
@@ -660,8 +652,17 @@ func policyEnvironment(base []string, fixture policyFixture) []string {
 		"REVIEW_CONCLUSION":        reviewConclusion,
 		"DEPENDABOT_REVIEW_RESULT": fixture.dependabotReviewResult,
 		"RISK":                     fixture.risk,
+		"DEPENDENCY":               fixture.dependency,
+		"VERSION":                  fixture.version,
 		"RELEASE_AGE":              fixture.releaseAge,
 		"MIN_RELEASE_AGE_HOURS":    "24",
+	}
+	environment := make([]string, 0, len(base)+len(values))
+	for _, value := range base {
+		name, _, _ := strings.Cut(value, "=")
+		if _, replaced := values[name]; !replaced && name != "POLICY_FIXTURE" {
+			environment = append(environment, value)
+		}
 	}
 	for name, value := range values {
 		if value != "" {
@@ -669,6 +670,20 @@ func policyEnvironment(base []string, fixture policyFixture) []string {
 		}
 	}
 	return environment
+}
+
+func TestPolicyEnvironment_ReplacesApprovalScriptInputs(t *testing.T) {
+	environment := policyEnvironment([]string{
+		"DEPENDENCY=host-dependency",
+		"VERSION=host-version",
+		"UNRELATED=value",
+	}, policyFixture{})
+
+	for _, value := range environment {
+		if value == "DEPENDENCY=host-dependency" || value == "VERSION=host-version" {
+			t.Errorf("policy environment leaks host approval-script input %q", value)
+		}
+	}
 }
 
 func reportEnvironment(base []string, fixture reportFixture) []string {
