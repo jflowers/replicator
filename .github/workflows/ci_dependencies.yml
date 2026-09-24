@@ -153,8 +153,7 @@ jobs:
       && needs.call_deps_reviewer.result == 'success'
       && needs.call_dependabot_reviewer.result == 'success'
       && needs.call_deps_reviewer.outputs.review_conclusion == 'success'
-      && needs.call_dependabot_reviewer.outputs.risk_level != ''
-      && needs.call_dependabot_reviewer.outputs.risk_level != 'high'
+      && (needs.call_dependabot_reviewer.outputs.risk_level == 'low' || needs.call_dependabot_reviewer.outputs.risk_level == 'medium')
       && needs.call_dependabot_reviewer.outputs.release_age_hours != ''
       && fromJSON(needs.call_dependabot_reviewer.outputs.release_age_hours) >= 24
     runs-on: ubuntu-latest
