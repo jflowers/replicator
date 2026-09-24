@@ -152,7 +152,17 @@ func TestCIDependenciesWorkflow_StructureEnforcesGuardedApproval(t *testing.T) {
 	} {
 		assertMatches(t, approvalJob, `(?m)^\s+`+environmentName+`:\s+[^\n]+$`, environmentName+" environment input")
 	}
-	assertContains(t, approvalJob, "24", "24-hour minimum release age")
+	ifThreshold := regexp.MustCompile(`fromJSON\([^)]+release_age[^)]*\)\s*>=\s*(\d+)`).FindStringSubmatch(approvalJob)
+	envThreshold := regexp.MustCompile(`(?m)^\s+MIN_RELEASE_AGE_HOURS:\s*(\d+)\s*$`).FindStringSubmatch(approvalJob)
+	if ifThreshold == nil {
+		t.Fatal("approval job if expression: release-age threshold not found")
+	}
+	if envThreshold == nil {
+		t.Fatal("approval job env: MIN_RELEASE_AGE_HOURS not found")
+	}
+	if ifThreshold[1] != envThreshold[1] {
+		t.Errorf("release-age threshold drift: if expression uses %s but MIN_RELEASE_AGE_HOURS is %s", ifThreshold[1], envThreshold[1])
+	}
 
 	assertNoMutationCapabilities(t, workflow)
 }
@@ -481,6 +491,32 @@ func TestCIDependenciesWorkflow_ReportScriptEvaluatesPolicyFixtures(t *testing.T
 	}
 }
 
+func TestPolicyEnvironment_ReplacesApprovalScriptInputs(t *testing.T) {
+	environment := policyEnvironment(policyFixture{})
+
+	for _, value := range environment {
+		if value == "DEPENDENCY=host-dependency" || value == "VERSION=host-version" || value == "UNRELATED=value" {
+			t.Errorf("policy environment leaks host approval-script input %q", value)
+		}
+	}
+}
+
+func TestWorkflowScriptHarnesses_DoNotInheritHostEnvironment(t *testing.T) {
+	t.Setenv("WORKFLOWTEST_HOST_SENTINEL", "must-not-reach-node")
+	workflow := readDependencyWorkflow(t)
+	approvalScript := yamlLiteralBlock(t, yamlSection(t, workflow, "approve_dependabot_prs", 2), "script")
+	reportScript := yamlLiteralBlock(t, yamlSection(t, workflow, "comment_on_dependabot_prs", 2), "script")
+
+	approvalResult := executeApprovalScript(t, approvalScript, policyFixture{})
+	if approvalResult.Sentinel != "" {
+		t.Errorf("approval harness inherited host sentinel %q", approvalResult.Sentinel)
+	}
+	reportResult := executeReportScript(t, reportScript, reportFixture{})
+	if reportResult.Sentinel != "" {
+		t.Errorf("report harness inherited host sentinel %q", reportResult.Sentinel)
+	}
+}
+
 func readDependencyWorkflow(t *testing.T) string {
 	t.Helper()
 	_, currentFile, _, ok := runtime.Caller(0)
@@ -665,32 +701,6 @@ func policyEnvironment(fixture policyFixture) []string {
 		}
 	}
 	return environment
-}
-
-func TestPolicyEnvironment_ReplacesApprovalScriptInputs(t *testing.T) {
-	environment := policyEnvironment(policyFixture{})
-
-	for _, value := range environment {
-		if value == "DEPENDENCY=host-dependency" || value == "VERSION=host-version" || value == "UNRELATED=value" {
-			t.Errorf("policy environment leaks host approval-script input %q", value)
-		}
-	}
-}
-
-func TestWorkflowScriptHarnesses_DoNotInheritHostEnvironment(t *testing.T) {
-	t.Setenv("WORKFLOWTEST_HOST_SENTINEL", "must-not-reach-node")
-	workflow := readDependencyWorkflow(t)
-	approvalScript := yamlLiteralBlock(t, yamlSection(t, workflow, "approve_dependabot_prs", 2), "script")
-	reportScript := yamlLiteralBlock(t, yamlSection(t, workflow, "comment_on_dependabot_prs", 2), "script")
-
-	approvalResult := executeApprovalScript(t, approvalScript, policyFixture{})
-	if approvalResult.Sentinel != "" {
-		t.Errorf("approval harness inherited host sentinel %q", approvalResult.Sentinel)
-	}
-	reportResult := executeReportScript(t, reportScript, reportFixture{})
-	if reportResult.Sentinel != "" {
-		t.Errorf("report harness inherited host sentinel %q", reportResult.Sentinel)
-	}
 }
 
 func reportEnvironment(fixture reportFixture) []string {
