@@ -1,0 +1,38 @@
+# CI Checks
+# ---------
+# Standardized linting and PR title validation.
+# Consumes the reusable CI workflow from org-infra, which
+# bundles MegaLinter (linters configured in .mega-linter.yml)
+# and commitlint-based PR title validation.
+#
+# Runs alongside the existing "Build and Test" job in
+# ci.yml. Both checks must pass for merges and releases.
+#
+# Fixes: https://github.com/unbound-force/replicator/issues/25
+
+name: Standardized CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# org-infra reusable_ci.yml@0c784711926c9864f027ec565fd7c06a382d80f8
+# has no internal concurrency block; caller-level concurrency is intentional.
+
+jobs:
+  call-reusable-ci:
+    name: Standardized CI
+    uses: complytime/org-infra/.github/workflows/reusable_ci.yml@0c784711926c9864f027ec565fd7c06a382d80f8  # v0.7.1
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read

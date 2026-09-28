@@ -17,6 +17,8 @@ branches:
         strict: true
         contexts:
           - "Build and Test"
+          # Confirmed by PR 101's Standardized CI run at the pinned org-infra SHA.
+          - "Standardized CI / Run linters"
       enforce_admins: false
       required_linear_history: false
       restrictions: null

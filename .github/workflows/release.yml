@@ -48,7 +48,7 @@ jobs:
     with:
       tag: ${{ inputs.tag }}
       allow_prerelease: true
-      ci_checks: '["Build and Test"]'
+      ci_checks: '["Build and Test", "Standardized CI / Run linters"]'
       skip_semver_check: ${{ inputs.skip_semver_check }}
       skip_ci_checks: ${{ inputs.skip_ci_checks }}
       skip_unreleased_check: ${{ inputs.skip_unreleased_check }}
@@ -215,6 +215,8 @@ jobs:
       RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Download final darwin archive and release manifest
         run: |

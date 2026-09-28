@@ -50,7 +50,7 @@ over stdio JSON-RPC. Each tool has:
 ### Naming Convention
 
 | Concept | Name |
-|---------|------|
+| --- | --- |
 | Work items | **Org** |
 | Individual item | **Cell** |
 | Agent coordination | **Forge** |
@@ -91,7 +91,13 @@ non-negotiable.
   `.github/workflows/` for the exact commands -- do not
   rely on memory. Any failure blocks the task. The CI
   `Build and Test` check includes `govulncheck` for
-  vulnerability scanning of Go dependencies.
+  vulnerability scanning of Go dependencies. The
+  `Standardized CI / Run linters` check runs MegaLinter
+  (via `complytime/org-infra` reusable workflow) with
+  linters configured in `.mega-linter.yml` and PR title
+  validation. Note: MegaLinter runs in CI only; there is
+  no local equivalent. Use `mega-linter-runner` if local
+  linting is needed (requires Docker).
 - **Intent Drift Detection**: Implementation must faithfully
   capture the spec's intent. The parity test suite verifies
   response shapes match the TypeScript version.
@@ -224,15 +230,15 @@ patterns.
 
 ### Tool Selection Matrix
 
-| Query Intent | Dewey Tool | When to Use |
-|-------------|-----------|-------------|
-| Conceptual understanding | `dewey_semantic_search` | "How does X work?" |
-| Keyword lookup | `dewey_search` | Known terms, FR numbers |
-| Read specific page | `dewey_get_page` | Known document path |
-| Relationship discovery | `dewey_find_connections` | "How are X and Y related?" |
-| Similar documents | `dewey_similar` | "Find specs like this one" |
-| Filtered semantic | `dewey_semantic_search_filtered` | Search within source type |
-| Graph navigation | `dewey_traverse` | Dependency chain walking |
+| Query Intent             | Dewey Tool                        | When to Use                    |
+| ------------------------ | --------------------------------- | ------------------------------ |
+| Conceptual understanding | `dewey_semantic_search`           | "How does X work?"             |
+| Keyword lookup           | `dewey_search`                    | Known terms, FR numbers        |
+| Read specific page       | `dewey_get_page`                  | Known document path            |
+| Relationship discovery   | `dewey_find_connections`          | "How are X and Y related?"     |
+| Similar documents        | `dewey_similar`                   | "Find specs like this one"     |
+| Filtered semantic        | `dewey_semantic_search_filtered`  | Search within source type      |
+| Graph navigation         | `dewey_traverse`                  | Dependency chain walking       |
 
 ### Graceful Degradation (3-Tier)
 
@@ -288,10 +294,10 @@ CI.
 
 This project uses a two-tier specification framework:
 
-| Tier | Tool | When to Use | Location |
-|------|------|-------------|----------|
-| Strategic | Speckit | 3+ stories, architecture | `specs/NNN-*/` |
-| Tactical | OpenSpec | <3 stories, bug fix | `openspec/changes/` |
+| Tier      | Tool     | When to Use              | Location              |
+| --------- | -------- | ------------------------ | --------------------- |
+| Strategic | Speckit  | 3+ stories, architecture | `specs/NNN-*/`        |
+| Tactical  | OpenSpec | <3 stories, bug fix      | `openspec/changes/`   |
 
 ### Speckit Pipeline
 
@@ -389,7 +395,7 @@ make install        # Install to GOPATH/bin
 ### CLI Commands
 
 | Command | Purpose |
-|---------|---------|
+| --- | --- |
 | `replicator init` | Per-repo setup: creates `.uf/replicator/` with empty `cells.json` + scaffolds agent kit |
 | `replicator setup` | Per-machine setup: creates `~/.config/uf/replicator/` + SQLite DB |
 | `replicator serve` | Start MCP JSON-RPC server on stdio |
@@ -402,7 +408,7 @@ make install        # Install to GOPATH/bin
 
 ## Project Structure
 
-```
+```text
 cmd/replicator/       CLI entrypoint (cobra)
 internal/
   agentkit/           Embedded agent kit (commands, skills, agents)
@@ -441,6 +447,7 @@ originally by [Joel Hooks](https://github.com/joelhooks).
 - Go 1.25+ + cobra (CLI), modernc.org/sqlite (pure Go SQLite), embed (stdlib) (003-rename-terminology)
 
 ## Recent Changes
+- 101-adopt-org-infra-ci: Added MegaLinter CI workflow via `complytime/org-infra` reusable workflow, added `.mega-linter.yml` config, added `Standardized CI / Run linters` to branch protection and release preflight gating
 - 428-adopt-org-infra-release-workflows: Adopted org-infra reusable workflows for release pipeline, added govulncheck to CI, added per-package coverage ratchets, added CI convention pack, added SECURITY.md and CODEOWNERS, migrated commands to `uf.*` namespace
 - 001-go-rewrite-phases: Added Go 1.25+ + `cobra` (CLI), `modernc.org/sqlite` (pure Go SQLite), stdlib `encoding/json` (MCP JSON-RPC), stdlib `os/exec` (git operations)
 
