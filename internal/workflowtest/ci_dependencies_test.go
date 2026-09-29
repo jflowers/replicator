@@ -26,6 +26,7 @@ const (
 
 type policyFixture struct {
 	name                   string
+	eventName              string
 	author                 string
 	depsReviewResult       string
 	reviewConclusion       string
@@ -93,7 +94,7 @@ func TestCIDependenciesWorkflow_StructureEnforcesGuardedApproval(t *testing.T) {
 	assertMatches(t, workflow, `(?ms)^on:\s*\n\s+push:\s*\n\s+branches:\s*\[main\]`, "main push trigger")
 	assertMatches(t, workflow, `(?ms)^on:.*?\n\s+pull_request_target:\s*\n\s+branches:\s*\[main\]`, "trusted main pull-request trigger")
 	assertMatches(t, workflow, `(?ms)^permissions:\s*\n\s+contents:\s+read\s*\n\s+issues:\s+none\s*\n\s+pull-requests:\s+none`, "read-only workflow permissions")
-	assertMatches(t, workflow, `(?ms)^concurrency:\s*\n\s+group:\s+.*github\.workflow.*github\.ref.*\n\s+cancel-in-progress:\s+true`, "ref-scoped concurrency")
+	assertMatches(t, workflow, `(?ms)^concurrency:\s*\n\s+group:\s+.*github\.workflow.*github\.event\.pull_request\.number.*github\.ref.*\n\s+cancel-in-progress:\s+true`, "PR- or ref-scoped concurrency")
 
 	jobs := childKeys(t, yamlSection(t, workflow, "jobs", 0), 2)
 	wantJobs := []string{
@@ -146,7 +147,8 @@ func TestCIDependenciesWorkflow_StructureEnforcesGuardedApproval(t *testing.T) {
 		t.Fatal("review report must describe eligibility without claiming approval")
 	}
 
-	assertContains(t, approvalJob, dependabotAuthor, "Dependabot-only approval guard")
+	assertMatches(t, approvalJob, `(?m)^\s+&& github\.event_name == 'pull_request_target'$`, "trusted pull-request approval guard")
+	assertMatches(t, approvalJob, `(?m)^\s+&& github\.event\.pull_request\.user\.login == 'dependabot\[bot\]'$`, "Dependabot-only approval guard")
 	assertContains(t, approvalJob, "needs.call_deps_reviewer.result", "approval review result predicate")
 	assertContains(t, approvalJob, "needs.call_dependabot_reviewer.outputs.risk", "approval risk predicate")
 	assertContains(t, approvalJob, "needs.call_dependabot_reviewer.outputs.release_age", "approval release-age predicate")
@@ -163,6 +165,7 @@ func TestCIDependenciesWorkflow_StructureEnforcesGuardedApproval(t *testing.T) {
 	} {
 		assertMatches(t, approvalJob, `(?m)^\s+`+environmentName+`:\s+[^\n]+$`, environmentName+" environment input")
 	}
+	assertMatches(t, approvalJob, `(?m)^\s+EVENT_NAME:\s+\$\{\{ github\.event_name \}\}$`, "trusted event-name wiring")
 	ifThreshold := regexp.MustCompile(`fromJSON\([^)]+release_age[^)]*\)\s*>=\s*(\d+)`).FindStringSubmatch(approvalJob)
 	envThreshold := regexp.MustCompile(`(?m)^\s+MIN_RELEASE_AGE_HOURS:\s*(\d+)\s*$`).FindStringSubmatch(approvalJob)
 	workflowThreshold := regexp.MustCompile(`(?m)^  MIN_RELEASE_AGE_HOURS:\s*(\d+)\s*$`).FindStringSubmatch(workflow)
@@ -282,6 +285,11 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 			risk: "low", releaseAge: "48",
 		},
 		{
+			name:      "untrusted pull request event",
+			eventName: "pull_request", author: dependabotAuthor, depsReviewResult: "success",
+			dependabotReviewResult: "success", risk: "low", releaseAge: "48",
+		},
+		{
 			name:   "active CHANGES_REQUESTED",
 			author: dependabotAuthor, depsReviewResult: "success", dependabotReviewResult: "success",
 			risk: "low", releaseAge: "48",
@@ -348,14 +356,6 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 			wantFailure: "head changed", wantThrown: "head changed",
 		},
 	}
-	for index := range fixtures {
-		if fixtures[index].dependency == "" && !fixtures[index].omitDependency {
-			fixtures[index].dependency = "example.org/module"
-		}
-		if fixtures[index].version == "" && !fixtures[index].omitVersion {
-			fixtures[index].version = "1.2.3"
-		}
-	}
 	for _, releaseAge := range []string{"24e0", "0x18", "+24", "Infinity", "NaN"} {
 		fixtures = append(fixtures, policyFixture{
 			name:   fmt.Sprintf("reject non-decimal release age %q", releaseAge),
@@ -368,6 +368,14 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 		author: dependabotAuthor, depsReviewResult: "success", dependabotReviewResult: "success",
 		risk: "low", releaseAge: strings.Repeat("9", 400),
 	})
+	for index := range fixtures {
+		if fixtures[index].dependency == "" && !fixtures[index].omitDependency {
+			fixtures[index].dependency = "example.org/module"
+		}
+		if fixtures[index].version == "" && !fixtures[index].omitVersion {
+			fixtures[index].version = "1.2.3"
+		}
+	}
 
 	for _, fixture := range fixtures {
 		t.Run(fixture.name, func(t *testing.T) {
@@ -799,12 +807,16 @@ func requireNode(t *testing.T) string {
 }
 
 func policyEnvironment(fixture policyFixture) []string {
+	eventName := fixture.eventName
+	if eventName == "" {
+		eventName = "pull_request_target"
+	}
 	reviewConclusion := fixture.reviewConclusion
 	if reviewConclusion == "" && !fixture.omitReviewConclusion {
 		reviewConclusion = fixture.depsReviewResult
 	}
 	values := map[string]string{
-		"EVENT_NAME":               "pull_request_target",
+		"EVENT_NAME":               eventName,
 		"PR_AUTHOR":                fixture.author,
 		"EXPECTED_HEAD_SHA":        reviewedHeadSHA,
 		"DEPS_REVIEW_RESULT":       fixture.depsReviewResult,
