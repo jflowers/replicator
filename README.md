@@ -152,7 +152,7 @@ flowchart LR
 
 ### Package Layout
 
-```
+```text
 cmd/replicator/       CLI entrypoint (cobra)
 internal/
   agentkit/           Embedded agent kit (commands, skills, agents)

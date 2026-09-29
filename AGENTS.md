@@ -221,6 +221,9 @@ Exempt from council review:
   Go response shapes against TypeScript fixtures.
 - **Git tests**: Guard with `if testing.Short() { t.Skip() }`
   for tests that shell out to git.
+- **Workflow tests**: Node.js is required to execute embedded
+  workflow policy. Use `requireNode(t)` so short-mode and local
+  runs without Node skip; CI fails when Node is unavailable.
 
 ## Knowledge Retrieval
 
