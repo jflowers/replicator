@@ -294,7 +294,8 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 			author: dependabotAuthor, depsReviewResult: "success", dependabotReviewResult: "success",
 			risk: "low", releaseAge: "48",
 			reviews:     []reviewFixture{review(1, "alice", "User", "CHANGES_REQUESTED", "2026-09-15T08:00:00Z")},
-			wantFailure: "active change requests", wantThrown: "active human change request",
+			wantFailure: "Manual review required: active change requests from alice.",
+			wantThrown:  "An active human change request blocks automated approval.",
 		},
 		{
 			name:   "later APPROVED clears veto",
@@ -322,7 +323,8 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 				review(1, "bob", "User", "CHANGES_REQUESTED", "2026-09-15T08:00:00Z"),
 				review(2, "alice", "User", "APPROVED", "2026-09-15T09:00:00Z"),
 			},
-			wantFailure: "active change requests", wantThrown: "active human change request",
+			wantFailure: "Manual review required: active change requests from bob.",
+			wantThrown:  "An active human change request blocks automated approval.",
 		},
 		{
 			name:   "DISMISSED clears veto",
@@ -341,7 +343,8 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 				review(1, "alice", "User", "CHANGES_REQUESTED", "2026-09-15T08:00:00Z"),
 				review(2, "alice", "User", "COMMENTED", "2026-09-15T09:00:00Z"),
 			},
-			wantFailure: "active change requests", wantThrown: "active human change request",
+			wantFailure: "Manual review required: active change requests from alice.",
+			wantThrown:  "An active human change request blocks automated approval.",
 		},
 		{
 			name:   "bot veto is not a human veto",
@@ -353,7 +356,8 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 			name:   "pull request head changed after review",
 			author: dependabotAuthor, depsReviewResult: "success", dependabotReviewResult: "success",
 			risk: "low", releaseAge: "48", currentHeadSHA: "fedcba9876543210fedcba9876543210fedcba98",
-			wantFailure: "head changed", wantThrown: "head changed",
+			wantFailure: "Manual review required: pull request head changed after dependency review.",
+			wantThrown:  "Pull request head changed after dependency review.",
 		},
 	}
 	for _, releaseAge := range []string{"24e0", "0x18", "+24", "Infinity", "NaN"} {
@@ -387,14 +391,14 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 				wantFailure := fixture.wantFailure
 				wantThrown := fixture.wantThrown
 				if wantFailure == "" {
-					wantFailure = "signals are incomplete or unsafe"
-					wantThrown = "signals are incomplete or unsafe"
+					wantFailure = "Manual review required: dependency approval signals are incomplete or unsafe."
+					wantThrown = "Dependency approval signals are incomplete or unsafe."
 				}
-				if !strings.Contains(strings.Join(result.Failures, "\n"), wantFailure) {
-					t.Errorf("failure messages = %v, want substring %q", result.Failures, wantFailure)
+				if len(result.Failures) != 1 || result.Failures[0] != wantFailure {
+					t.Errorf("failure messages = %v, want exactly [%q]", result.Failures, wantFailure)
 				}
-				if !strings.Contains(result.Thrown, wantThrown) {
-					t.Errorf("thrown = %q, want substring %q", result.Thrown, wantThrown)
+				if result.Thrown != wantThrown {
+					t.Errorf("thrown = %q, want %q", result.Thrown, wantThrown)
 				}
 			}
 			gotApproval := len(result.Approvals) > 0
