@@ -19,6 +19,8 @@ const (
 	orgInfraSHA       = "bd3718a218d649b093269fe4a979c4a4632dfad2"
 	approvalScriptSHA = "3a2844b7e9c422d3c10d287c895573f7108da1b3"
 	commentActionSHA  = "e8674b075228eee787fea43ef493e45ece1004c9"
+	minimumReleaseAge = "24"
+	minimumSHAPins    = 4
 )
 
 type policyFixture struct {
@@ -154,14 +156,25 @@ func TestCIDependenciesWorkflow_StructureEnforcesGuardedApproval(t *testing.T) {
 	}
 	ifThreshold := regexp.MustCompile(`fromJSON\([^)]+release_age[^)]*\)\s*>=\s*(\d+)`).FindStringSubmatch(approvalJob)
 	envThreshold := regexp.MustCompile(`(?m)^\s+MIN_RELEASE_AGE_HOURS:\s*(\d+)\s*$`).FindStringSubmatch(approvalJob)
+	workflowThreshold := regexp.MustCompile(`(?m)^  MIN_RELEASE_AGE_HOURS:\s*(\d+)\s*$`).FindStringSubmatch(workflow)
 	if ifThreshold == nil {
 		t.Fatal("approval job if expression: release-age threshold not found")
 	}
 	if envThreshold == nil {
 		t.Fatal("approval job env: MIN_RELEASE_AGE_HOURS not found")
 	}
-	if ifThreshold[1] != envThreshold[1] {
-		t.Errorf("release-age threshold drift: if expression uses %s but MIN_RELEASE_AGE_HOURS is %s", ifThreshold[1], envThreshold[1])
+	if workflowThreshold == nil {
+		t.Fatal("workflow env: MIN_RELEASE_AGE_HOURS not found")
+	}
+	for source, threshold := range map[string]string{
+		"approval if expression": ifThreshold[1],
+		"approval job env":       envThreshold[1],
+		"workflow env":           workflowThreshold[1],
+		"test harness":           minimumReleaseAge,
+	} {
+		if threshold != minimumReleaseAge {
+			t.Errorf("release-age threshold drift: %s uses %s, want %s", source, threshold, minimumReleaseAge)
+		}
 	}
 
 	assertNoMutationCapabilities(t, workflow)
@@ -288,6 +301,13 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 			risk: "low", releaseAge: "48", wantApproval: true,
 			reviews: []reviewFixture{review(1, "reviewer[bot]", "Bot", "CHANGES_REQUESTED", "2026-09-15T08:00:00Z")},
 		},
+	}
+	for _, releaseAge := range []string{"24e0", "0x18", "+24", "Infinity", "NaN"} {
+		fixtures = append(fixtures, policyFixture{
+			name:   fmt.Sprintf("reject non-decimal release age %q", releaseAge),
+			author: dependabotAuthor, depsReviewResult: "success", dependabotReviewResult: "success",
+			risk: "low", releaseAge: releaseAge,
+		})
 	}
 
 	for _, fixture := range fixtures {
@@ -469,6 +489,15 @@ func TestCIDependenciesWorkflow_ReportScriptEvaluatesPolicyFixtures(t *testing.T
 			wantDependency: "example.org/module", wantVersion: "1.2.3", wantReleaseAge: "unavailable",
 		},
 	}
+	for _, releaseAge := range []string{"24e0", "0x18", "+24", "Infinity", "NaN"} {
+		fixtures = append(fixtures, reportFixture{
+			name: "reject non-decimal release age " + releaseAge, depsReviewResult: "success", reviewConclusion: "success",
+			dependabotReviewResult: "success", risk: "low", dependency: "example.org/module",
+			version: "1.2.3", releaseAge: releaseAge, wantEligibility: "Manual review required",
+			wantReviewConclusion: "success", wantRisk: "low", wantDependency: "example.org/module",
+			wantVersion: "1.2.3", wantReleaseAge: "unavailable",
+		})
+	}
 
 	for _, fixture := range fixtures {
 		t.Run(fixture.name, func(t *testing.T) {
@@ -591,9 +620,9 @@ const console = {log: () => {}, error: () => {}, warn: () => {}};
 })();
 `, indent(script, "    "))
 
-	command := exec.Command(nodePath, "-e", harness)
-	command.Env = append(policyEnvironment(fixture), "POLICY_FIXTURE="+string(fixtureJSON))
-	output, err := command.CombinedOutput()
+	cmd := exec.Command(nodePath, "-e", harness)
+	cmd.Env = append(policyEnvironment(fixture), "POLICY_FIXTURE="+string(fixtureJSON))
+	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("execute approval github-script policy: %v\n%s", err, output)
 	}
@@ -649,9 +678,9 @@ const core = {
 })();
 `, indent(script, "    "))
 
-	command := exec.Command(nodePath, "-e", harness)
-	command.Env = append(reportEnvironment(fixture), "REPORT_FIXTURE="+string(fixtureJSON))
-	output, err := command.CombinedOutput()
+	cmd := exec.Command(nodePath, "-e", harness)
+	cmd.Env = append(reportEnvironment(fixture), "REPORT_FIXTURE="+string(fixtureJSON))
+	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("execute report github-script policy: %v\n%s", err, output)
 	}
@@ -692,7 +721,7 @@ func policyEnvironment(fixture policyFixture) []string {
 		"DEPENDENCY":               fixture.dependency,
 		"VERSION":                  fixture.version,
 		"RELEASE_AGE":              fixture.releaseAge,
-		"MIN_RELEASE_AGE_HOURS":    "24",
+		"MIN_RELEASE_AGE_HOURS":    minimumReleaseAge,
 	}
 	environment := make([]string, 0, len(values))
 	for name, value := range values {
@@ -712,7 +741,7 @@ func reportEnvironment(fixture reportFixture) []string {
 		"DEPENDENCY":               fixture.dependency,
 		"VERSION":                  fixture.version,
 		"RELEASE_AGE":              fixture.releaseAge,
-		"MIN_RELEASE_AGE_HOURS":    "24",
+		"MIN_RELEASE_AGE_HOURS":    minimumReleaseAge,
 	}
 	environment := make([]string, 0, len(values))
 	for name, value := range values {
@@ -825,8 +854,8 @@ func assertFullSHAPins(t *testing.T, workflow string) {
 	t.Helper()
 	usesPattern := regexp.MustCompile(`(?m)^\s*(?:-\s+)?uses:\s+([^\s@]+)@([^\s#]+)(?:\s+#\s+(.+))?$`)
 	matches := usesPattern.FindAllStringSubmatch(workflow, -1)
-	if len(matches) < 4 {
-		t.Fatalf("uses references = %d, want at least four pinned references", len(matches))
+	if len(matches) < minimumSHAPins {
+		t.Fatalf("uses references = %d, want at least %d pinned references", len(matches), minimumSHAPins)
 	}
 	shaPattern := regexp.MustCompile(`^[0-9a-f]{40}$`)
 	versionPattern := regexp.MustCompile(`^v\d+\.\d+\.\d+$`)

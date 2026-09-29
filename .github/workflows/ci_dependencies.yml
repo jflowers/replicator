@@ -85,10 +85,14 @@ jobs:
             const releaseAgeInput = dependabotReviewSucceeded
               ? valueOrUnavailable(process.env.RELEASE_AGE)
               : unavailable;
-            const releaseAge = /^\d+(?:\.\d+)?$/.test(releaseAgeInput)
+            const decimalPattern = /^\d+(?:\.\d+)?$/;
+            const releaseAge = decimalPattern.test(releaseAgeInput)
               ? Number(releaseAgeInput)
               : Number.NaN;
-            const minimumReleaseAge = Number(process.env.MIN_RELEASE_AGE_HOURS);
+            const minimumReleaseAgeInput = (process.env.MIN_RELEASE_AGE_HOURS || '').trim();
+            const minimumReleaseAge = decimalPattern.test(minimumReleaseAgeInput)
+              ? Number(minimumReleaseAgeInput)
+              : Number.NaN;
             const eligible = depsReviewSucceeded
               && dependabotReviewSucceeded
               && reviewConclusion === 'success'
@@ -188,10 +192,11 @@ jobs:
             const version = (process.env.VERSION || '').trim() || 'unavailable';
             const releaseAgeInput = (process.env.RELEASE_AGE || '').trim();
             const minimumReleaseAgeInput = (process.env.MIN_RELEASE_AGE_HOURS || '').trim();
-            const releaseAge = Number(releaseAgeInput);
-            const minimumReleaseAge = Number(minimumReleaseAgeInput);
-            const validReleaseAge = releaseAgeInput !== '' && Number.isFinite(releaseAge);
-            const validMinimumReleaseAge = minimumReleaseAgeInput !== '' && Number.isFinite(minimumReleaseAge);
+            const decimalPattern = /^\d+(?:\.\d+)?$/;
+            const validReleaseAge = decimalPattern.test(releaseAgeInput);
+            const validMinimumReleaseAge = decimalPattern.test(minimumReleaseAgeInput);
+            const releaseAge = validReleaseAge ? Number(releaseAgeInput) : Number.NaN;
+            const minimumReleaseAge = validMinimumReleaseAge ? Number(minimumReleaseAgeInput) : Number.NaN;
             const validRisk = risk === 'low' || risk === 'medium';
 
             const staticSignalsAreSafe = eventName === 'pull_request'
