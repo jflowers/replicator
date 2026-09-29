@@ -384,6 +384,9 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 	for _, fixture := range fixtures {
 		t.Run(fixture.name, func(t *testing.T) {
 			result := executeApprovalScript(t, script, fixture)
+			if fixture.wantApproval && (len(result.Failures) != 0 || result.Thrown != "") {
+				t.Errorf("successful approval had failures=%v thrown=%q", result.Failures, result.Thrown)
+			}
 			if !fixture.wantApproval && (len(result.Failures) == 0 || result.Thrown == "") {
 				t.Errorf("unsafe policy did not fail closed: failures=%v thrown=%q", result.Failures, result.Thrown)
 			}

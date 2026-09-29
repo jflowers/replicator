@@ -31,9 +31,10 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 - CODEOWNERS for governance file protection
 - Dependabot configuration for automated weekly dependency update PRs
   for Go modules and GitHub Actions
-- Standardized Dependabot dependency-review reporting and guarded approval
-  for qualifying low- or medium-risk updates at least 24 hours old, without
-  auto-merge
+- automate-dependency-update: Standardized Dependabot dependency-review
+  reporting and guarded approval for qualifying low- or medium-risk updates at
+  least 24 hours old, without auto-merge
+  - Spec: `openspec/changes/automate-dependency-update/specs/dependency-review-automation/spec.md`
 - `govulncheck` security scanning in CI pipeline (pinned to v1.5.0)
 - Per-package coverage ratchets in CI with 11 package thresholds
 - `make coverage` and `make check-coverage` Makefile targets for
