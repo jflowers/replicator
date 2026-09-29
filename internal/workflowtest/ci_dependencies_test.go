@@ -113,7 +113,8 @@ func TestCIDependenciesWorkflow_StructureEnforcesGuardedApproval(t *testing.T) {
 	assertFullSHAPins(t, workflow)
 
 	assertContains(t, commentJob, "always()", "failure-tolerant reporting condition")
-	assertContains(t, commentJob, dependabotAuthor, "Dependabot-only reporting guard")
+	assertMatches(t, commentJob, `(?m)^\s+&& github\.event_name == 'pull_request'$`, "pull-request reporting guard")
+	assertMatches(t, commentJob, `(?m)^\s+&& github\.event\.pull_request\.user\.login == 'dependabot\[bot\]'$`, "Dependabot-only reporting guard")
 	assertContains(t, commentJob, "needs.call_deps_reviewer.result", "general review result wiring")
 	for _, output := range []string{"risk_level", "dep_name", "dep_version", "release_age_hours"} {
 		assertContains(t, commentJob, "needs.call_dependabot_reviewer.outputs."+output, output+" output wiring")
@@ -227,6 +228,16 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 			risk: "low",
 		},
 		{
+			name:   "missing dependency name",
+			author: dependabotAuthor, depsReviewResult: "success", dependabotReviewResult: "success",
+			risk: "low", releaseAge: "48", version: "1.2.3",
+		},
+		{
+			name:   "missing dependency version",
+			author: dependabotAuthor, depsReviewResult: "success", dependabotReviewResult: "success",
+			risk: "low", releaseAge: "48", dependency: "example.org/module",
+		},
+		{
 			name:   "malformed release age",
 			author: dependabotAuthor, depsReviewResult: "success", dependabotReviewResult: "success",
 			risk: "medium", releaseAge: "unknown",
@@ -282,6 +293,24 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 			},
 		},
 		{
+			name:   "reversed review order uses timestamps",
+			author: dependabotAuthor, depsReviewResult: "success", dependabotReviewResult: "success",
+			risk: "low", releaseAge: "48", dependency: "example.org/module", version: "1.2.3", wantApproval: true,
+			reviews: []reviewFixture{
+				review(2, "alice", "User", "APPROVED", "2026-09-15T09:00:00Z"),
+				review(1, "alice", "User", "CHANGES_REQUESTED", "2026-09-15T08:00:00Z"),
+			},
+		},
+		{
+			name:   "one reviewer approval does not clear another reviewer veto",
+			author: dependabotAuthor, depsReviewResult: "success", dependabotReviewResult: "success",
+			risk: "low", releaseAge: "48", dependency: "example.org/module", version: "1.2.3",
+			reviews: []reviewFixture{
+				review(1, "bob", "User", "CHANGES_REQUESTED", "2026-09-15T08:00:00Z"),
+				review(2, "alice", "User", "APPROVED", "2026-09-15T09:00:00Z"),
+			},
+		},
+		{
 			name:   "DISMISSED clears veto",
 			author: dependabotAuthor, depsReviewResult: "success", dependabotReviewResult: "success",
 			risk: "medium", releaseAge: "48", dependency: "example.org/module", version: "1.2.3", wantApproval: true,
@@ -302,7 +331,7 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 		{
 			name:   "bot veto is not a human veto",
 			author: dependabotAuthor, depsReviewResult: "success", dependabotReviewResult: "success",
-			risk: "low", releaseAge: "48", wantApproval: true,
+			risk: "low", releaseAge: "48", dependency: "example.org/module", version: "1.2.3", wantApproval: true,
 			reviews: []reviewFixture{review(1, "reviewer[bot]", "Bot", "CHANGES_REQUESTED", "2026-09-15T08:00:00Z")},
 		},
 		{

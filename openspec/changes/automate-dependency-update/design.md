@@ -56,7 +56,7 @@ All `uses` references will be pinned to implementation-time-verified 40-characte
 
 ### 4. Treat reusable workflow outputs as untrusted approval inputs
 
-The approval step's outer expression will gate obvious ineligible cases: general review must equal `success`, risk must be neither `high` nor empty, and release age must be present and at least 24 hours. The script will receive reviewer outputs through environment variables rather than interpolate them into JavaScript source.
+The approval step's outer expression will gate obvious ineligible cases: general review must equal `success`, risk must be low or medium, and release age must be present and at least 24 hours. The script will receive reviewer outputs through environment variables rather than interpolate them into JavaScript source.
 
 The script will validate the expected values again and list pull-request reviews. It will group non-bot reviews by reviewer login, sort them chronologically, ignore non-decisive `COMMENTED` records, and evaluate each reviewer's latest decisive state. A latest `CHANGES_REQUESTED` state blocks approval; a later `APPROVED` or `DISMISSED` state clears that reviewer's earlier veto. This second validation keeps malformed values and current API-derived vetoes on the fail-closed path. The created review body will include risk, review conclusion, and release age as decision evidence.
 

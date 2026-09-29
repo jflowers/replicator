@@ -202,6 +202,8 @@ jobs:
             const releaseAge = validReleaseAge ? parsedReleaseAge : Number.NaN;
             const minimumReleaseAge = validMinimumReleaseAge ? parsedMinimumReleaseAge : Number.NaN;
             const validRisk = risk === 'low' || risk === 'medium';
+            const validDependency = dependency !== 'unavailable';
+            const validVersion = version !== 'unavailable';
 
             const staticSignalsAreSafe = eventName === 'pull_request'
               && author === 'dependabot[bot]'
@@ -210,6 +212,8 @@ jobs:
               && reviewConclusion === 'success'
               && dependabotReviewResult === 'success'
               && validRisk
+              && validDependency
+              && validVersion
               && validReleaseAge
               && validMinimumReleaseAge
               && releaseAge >= minimumReleaseAge;

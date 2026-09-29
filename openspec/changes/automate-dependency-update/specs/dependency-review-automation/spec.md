@@ -54,7 +54,7 @@ The reporting job MUST run for Dependabot pull requests even when either reusabl
 The workflow MUST auto-approve a Dependabot pull request only when all of the following conditions hold:
 
 - The general dependency review conclusion is successful.
-- The calculated risk is not high.
+- The calculated risk is low or medium.
 - The release age is known, parseable, and at least 24 hours.
 - No non-bot reviewer has `CHANGES_REQUESTED` as that reviewer's latest effective review state.
 
