@@ -1,7 +1,7 @@
 # Dependencies
 # --
 # Reviews dependency updates and gates Dependabot approval on
-# low-risk releases that are at least 24 hours old.
+# low- or medium-risk releases that are at least 24 hours old.
 
 name: Dependencies
 
@@ -193,10 +193,12 @@ jobs:
             const releaseAgeInput = (process.env.RELEASE_AGE || '').trim();
             const minimumReleaseAgeInput = (process.env.MIN_RELEASE_AGE_HOURS || '').trim();
             const decimalPattern = /^\d+(?:\.\d+)?$/;
-            const validReleaseAge = decimalPattern.test(releaseAgeInput);
-            const validMinimumReleaseAge = decimalPattern.test(minimumReleaseAgeInput);
-            const releaseAge = validReleaseAge ? Number(releaseAgeInput) : Number.NaN;
-            const minimumReleaseAge = validMinimumReleaseAge ? Number(minimumReleaseAgeInput) : Number.NaN;
+            const parsedReleaseAge = Number(releaseAgeInput);
+            const parsedMinimumReleaseAge = Number(minimumReleaseAgeInput);
+            const validReleaseAge = decimalPattern.test(releaseAgeInput) && Number.isFinite(parsedReleaseAge);
+            const validMinimumReleaseAge = decimalPattern.test(minimumReleaseAgeInput) && Number.isFinite(parsedMinimumReleaseAge);
+            const releaseAge = validReleaseAge ? parsedReleaseAge : Number.NaN;
+            const minimumReleaseAge = validMinimumReleaseAge ? parsedMinimumReleaseAge : Number.NaN;
             const validRisk = risk === 'low' || risk === 'medium';
 
             const staticSignalsAreSafe = eventName === 'pull_request'

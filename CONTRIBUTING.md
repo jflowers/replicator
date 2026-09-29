@@ -5,6 +5,8 @@
 - Go 1.25+
 - Git
 - Make
+- Node.js for workflow policy tests; local runs skip these tests when Node.js
+  is unavailable, while CI requires them
 
 ## Development Setup
 

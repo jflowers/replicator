@@ -36,6 +36,7 @@ type policyFixture struct {
 	version                string
 	reviews                []reviewFixture
 	wantApproval           bool
+	wantFailure            bool
 }
 
 type reviewFixture struct {
@@ -306,13 +307,21 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 		fixtures = append(fixtures, policyFixture{
 			name:   fmt.Sprintf("reject non-decimal release age %q", releaseAge),
 			author: dependabotAuthor, depsReviewResult: "success", dependabotReviewResult: "success",
-			risk: "low", releaseAge: releaseAge,
+			risk: "low", releaseAge: releaseAge, wantFailure: true,
 		})
 	}
+	fixtures = append(fixtures, policyFixture{
+		name:   "reject decimal overflow",
+		author: dependabotAuthor, depsReviewResult: "success", dependabotReviewResult: "success",
+		risk: "low", releaseAge: strings.Repeat("9", 400), wantFailure: true,
+	})
 
 	for _, fixture := range fixtures {
 		t.Run(fixture.name, func(t *testing.T) {
 			result := executeApprovalScript(t, script, fixture)
+			if fixture.wantFailure && (len(result.Failures) == 0 || result.Thrown == "") {
+				t.Errorf("invalid release age did not fail closed: failures=%v thrown=%q", result.Failures, result.Thrown)
+			}
 			gotApproval := len(result.Approvals) > 0
 			if gotApproval != fixture.wantApproval {
 				t.Errorf("approval created = %t, want %t (failures=%v, thrown=%q)", gotApproval, fixture.wantApproval, result.Failures, result.Thrown)
@@ -498,6 +507,13 @@ func TestCIDependenciesWorkflow_ReportScriptEvaluatesPolicyFixtures(t *testing.T
 			wantVersion: "1.2.3", wantReleaseAge: "unavailable",
 		})
 	}
+	fixtures = append(fixtures, reportFixture{
+		name: "reject decimal overflow", depsReviewResult: "success", reviewConclusion: "success",
+		dependabotReviewResult: "success", risk: "low", dependency: "example.org/module",
+		version: "1.2.3", releaseAge: strings.Repeat("9", 400), wantEligibility: "Manual review required",
+		wantReviewConclusion: "success", wantRisk: "low", wantDependency: "example.org/module",
+		wantVersion: "1.2.3", wantReleaseAge: "unavailable",
+	})
 
 	for _, fixture := range fixtures {
 		t.Run(fixture.name, func(t *testing.T) {

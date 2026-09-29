@@ -1,6 +1,6 @@
 ## Why
 
-Replicator already asks Dependabot to propose weekly Go module and GitHub Actions updates, but it has no repository workflow that evaluates dependency changes consistently or automates approval of low-risk updates. Maintainers must interpret each update manually, which delays routine maintenance and produces inconsistent review evidence.
+Replicator already asks Dependabot to propose weekly Go module and GitHub Actions updates, but it has no repository workflow that evaluates dependency changes consistently or automates approval of low- or medium-risk updates. Maintainers must interpret each update manually, which delays routine maintenance and produces inconsistent review evidence.
 
 Issue #38 requests adoption of the organization-owned dependency review workflows. The existing `.github/dependabot.yml` satisfies the update-proposal portion of that issue and will remain unchanged; this change closes the remaining review and guarded-approval gap.
 
@@ -8,7 +8,7 @@ Issue #38 requests adoption of the organization-owned dependency review workflow
 
 - Add a `ci_dependencies.yml` consumer workflow that invokes the pinned org-infra general dependency reviewer and Dependabot-specific risk reviewer.
 - Publish a standardized, replaceable review summary on Dependabot pull requests.
-- Auto-approve Dependabot pull requests only when dependency review succeeds, risk is not high, release age is known and at least 24 hours, and no human has requested changes.
+- Auto-approve Dependabot pull requests only when dependency review succeeds, risk is low or medium, release age is known and at least 24 hours, and no reviewer has an active human change request in their latest effective state.
 - Fail closed to manual review when any approval signal is missing, invalid, or unsafe.
 - Keep merging, branch protection, required status checks, and code-owner review outside the automation; approval MUST NOT enable or perform auto-merge.
 - Preserve the existing weekly `gomod` and `github-actions` Dependabot configuration without modification.

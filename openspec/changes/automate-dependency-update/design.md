@@ -1,6 +1,6 @@
 ## Context
 
-Replicator already has weekly Dependabot entries for the `gomod` and `github-actions` ecosystems in `.github/dependabot.yml`. That configuration was delivered by `ci-security-hygiene` and needs no change. The missing behavior is a consumer workflow that evaluates dependency changes, reports the result consistently, and approves only sufficiently old, non-high-risk Dependabot updates that pass dependency review and have no human request for changes.
+Replicator already has weekly Dependabot entries for the `gomod` and `github-actions` ecosystems in `.github/dependabot.yml`. That configuration was delivered by `ci-security-hygiene` and needs no change. The missing behavior is a consumer workflow that evaluates dependency changes, reports the result consistently, and approves only sufficiently old, low- or medium-risk Dependabot updates that pass dependency review and have no active human change request in each reviewer's latest effective state.
 
 The organization reference workflow in `unbound-force/unbound-force` supplies the intended job topology. At design time, the relevant tags resolve to:
 
