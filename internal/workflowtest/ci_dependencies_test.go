@@ -35,9 +35,13 @@ type policyFixture struct {
 	releaseAge             string
 	dependency             string
 	version                string
+	omitDependency         bool
+	omitVersion            bool
 	reviews                []reviewFixture
 	currentHeadSHA         string
 	wantApproval           bool
+	wantFailure            string
+	wantThrown             string
 }
 
 type reviewFixture struct {
@@ -87,7 +91,7 @@ func TestCIDependenciesWorkflow_StructureEnforcesGuardedApproval(t *testing.T) {
 
 	assertMatches(t, workflow, `(?m)^# .+\n# --\n# .+`, "purpose header")
 	assertMatches(t, workflow, `(?ms)^on:\s*\n\s+push:\s*\n\s+branches:\s*\[main\]`, "main push trigger")
-	assertMatches(t, workflow, `(?ms)^on:.*?\n\s+pull_request:\s*\n\s+branches:\s*\[main\]`, "main pull-request trigger")
+	assertMatches(t, workflow, `(?ms)^on:.*?\n\s+pull_request_target:\s*\n\s+branches:\s*\[main\]`, "trusted main pull-request trigger")
 	assertMatches(t, workflow, `(?ms)^permissions:\s*\n\s+contents:\s+read\s*\n\s+issues:\s+none\s*\n\s+pull-requests:\s+none`, "read-only workflow permissions")
 	assertMatches(t, workflow, `(?ms)^concurrency:\s*\n\s+group:\s+.*github\.workflow.*github\.ref.*\n\s+cancel-in-progress:\s+true`, "ref-scoped concurrency")
 
@@ -113,7 +117,7 @@ func TestCIDependenciesWorkflow_StructureEnforcesGuardedApproval(t *testing.T) {
 	assertFullSHAPins(t, workflow)
 
 	assertContains(t, commentJob, "always()", "failure-tolerant reporting condition")
-	assertMatches(t, commentJob, `(?m)^\s+&& github\.event_name == 'pull_request'$`, "pull-request reporting guard")
+	assertMatches(t, commentJob, `(?m)^\s+&& github\.event_name == 'pull_request_target'$`, "trusted pull-request reporting guard")
 	assertMatches(t, commentJob, `(?m)^\s+&& github\.event\.pull_request\.user\.login == 'dependabot\[bot\]'$`, "Dependabot-only reporting guard")
 	assertContains(t, commentJob, "needs.call_deps_reviewer.result", "general review result wiring")
 	for _, output := range []string{"risk_level", "dep_name", "dep_version", "release_age_hours"} {
@@ -230,12 +234,12 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 		{
 			name:   "missing dependency name",
 			author: dependabotAuthor, depsReviewResult: "success", dependabotReviewResult: "success",
-			risk: "low", releaseAge: "48", version: "1.2.3",
+			risk: "low", releaseAge: "48", version: "1.2.3", omitDependency: true,
 		},
 		{
 			name:   "missing dependency version",
 			author: dependabotAuthor, depsReviewResult: "success", dependabotReviewResult: "success",
-			risk: "low", releaseAge: "48", dependency: "example.org/module",
+			risk: "low", releaseAge: "48", dependency: "example.org/module", omitVersion: true,
 		},
 		{
 			name:   "malformed release age",
@@ -281,7 +285,8 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 			name:   "active CHANGES_REQUESTED",
 			author: dependabotAuthor, depsReviewResult: "success", dependabotReviewResult: "success",
 			risk: "low", releaseAge: "48",
-			reviews: []reviewFixture{review(1, "alice", "User", "CHANGES_REQUESTED", "2026-09-15T08:00:00Z")},
+			reviews:     []reviewFixture{review(1, "alice", "User", "CHANGES_REQUESTED", "2026-09-15T08:00:00Z")},
+			wantFailure: "active change requests", wantThrown: "active human change request",
 		},
 		{
 			name:   "later APPROVED clears veto",
@@ -309,6 +314,7 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 				review(1, "bob", "User", "CHANGES_REQUESTED", "2026-09-15T08:00:00Z"),
 				review(2, "alice", "User", "APPROVED", "2026-09-15T09:00:00Z"),
 			},
+			wantFailure: "active change requests", wantThrown: "active human change request",
 		},
 		{
 			name:   "DISMISSED clears veto",
@@ -327,6 +333,7 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 				review(1, "alice", "User", "CHANGES_REQUESTED", "2026-09-15T08:00:00Z"),
 				review(2, "alice", "User", "COMMENTED", "2026-09-15T09:00:00Z"),
 			},
+			wantFailure: "active change requests", wantThrown: "active human change request",
 		},
 		{
 			name:   "bot veto is not a human veto",
@@ -338,7 +345,16 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 			name:   "pull request head changed after review",
 			author: dependabotAuthor, depsReviewResult: "success", dependabotReviewResult: "success",
 			risk: "low", releaseAge: "48", currentHeadSHA: "fedcba9876543210fedcba9876543210fedcba98",
+			wantFailure: "head changed", wantThrown: "head changed",
 		},
+	}
+	for index := range fixtures {
+		if fixtures[index].dependency == "" && !fixtures[index].omitDependency {
+			fixtures[index].dependency = "example.org/module"
+		}
+		if fixtures[index].version == "" && !fixtures[index].omitVersion {
+			fixtures[index].version = "1.2.3"
+		}
 	}
 	for _, releaseAge := range []string{"24e0", "0x18", "+24", "Infinity", "NaN"} {
 		fixtures = append(fixtures, policyFixture{
@@ -358,6 +374,20 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 			result := executeApprovalScript(t, script, fixture)
 			if !fixture.wantApproval && (len(result.Failures) == 0 || result.Thrown == "") {
 				t.Errorf("unsafe policy did not fail closed: failures=%v thrown=%q", result.Failures, result.Thrown)
+			}
+			if !fixture.wantApproval {
+				wantFailure := fixture.wantFailure
+				wantThrown := fixture.wantThrown
+				if wantFailure == "" {
+					wantFailure = "signals are incomplete or unsafe"
+					wantThrown = "signals are incomplete or unsafe"
+				}
+				if !strings.Contains(strings.Join(result.Failures, "\n"), wantFailure) {
+					t.Errorf("failure messages = %v, want substring %q", result.Failures, wantFailure)
+				}
+				if !strings.Contains(result.Thrown, wantThrown) {
+					t.Errorf("thrown = %q, want substring %q", result.Thrown, wantThrown)
+				}
 			}
 			gotApproval := len(result.Approvals) > 0
 			if gotApproval != fixture.wantApproval {
@@ -774,7 +804,7 @@ func policyEnvironment(fixture policyFixture) []string {
 		reviewConclusion = fixture.depsReviewResult
 	}
 	values := map[string]string{
-		"EVENT_NAME":               "pull_request",
+		"EVENT_NAME":               "pull_request_target",
 		"PR_AUTHOR":                fixture.author,
 		"EXPECTED_HEAD_SHA":        reviewedHeadSHA,
 		"DEPS_REVIEW_RESULT":       fixture.depsReviewResult,
@@ -968,6 +998,7 @@ func assertIdempotentReport(t *testing.T, commentJob string) {
 func assertNoMutationCapabilities(t *testing.T, workflow string) {
 	t.Helper()
 	prohibited := []string{
+		`(?i)uses:[^\n]*actions/checkout`,
 		`(?i)pulls\.merge`,
 		`(?i)enablePullRequestAutoMerge`,
 		`(?i)disablePullRequestAutoMerge`,
