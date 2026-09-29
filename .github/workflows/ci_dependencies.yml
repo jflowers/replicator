@@ -172,6 +172,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           DEPS_REVIEW_RESULT: ${{ needs.call_deps_reviewer.result }}
           REVIEW_CONCLUSION: ${{ needs.call_deps_reviewer.outputs.review_conclusion }}
           DEPENDABOT_REVIEW_RESULT: ${{ needs.call_dependabot_reviewer.result }}
@@ -184,6 +185,7 @@ jobs:
           script: |
             const eventName = (process.env.EVENT_NAME || '').trim();
             const author = (process.env.PR_AUTHOR || '').trim();
+            const expectedHeadSHA = (process.env.EXPECTED_HEAD_SHA || '').trim();
             const depsReviewResult = (process.env.DEPS_REVIEW_RESULT || '').trim();
             const reviewConclusion = (process.env.REVIEW_CONCLUSION || '').trim();
             const dependabotReviewResult = (process.env.DEPENDABOT_REVIEW_RESULT || '').trim();
@@ -203,6 +205,7 @@ jobs:
 
             const staticSignalsAreSafe = eventName === 'pull_request'
               && author === 'dependabot[bot]'
+              && /^[0-9a-f]{40}$/.test(expectedHeadSHA)
               && depsReviewResult === 'success'
               && reviewConclusion === 'success'
               && dependabotReviewResult === 'success'
@@ -255,10 +258,22 @@ jobs:
               throw new Error('An active human change request blocks automated approval.');
             }
 
+            const pullRequest = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+            const currentHeadSHA = (pullRequest.data?.head?.sha || '').trim();
+            if (currentHeadSHA !== expectedHeadSHA) {
+              core.setFailed('Manual review required: pull request head changed after dependency review.');
+              throw new Error('Pull request head changed after dependency review.');
+            }
+
             await github.rest.pulls.createReview({
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: context.issue.number,
+              commit_id: expectedHeadSHA,
               event: 'APPROVE',
               body: [
                 'Automated dependency approval after static and live review-state validation.',

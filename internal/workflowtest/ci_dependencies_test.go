@@ -21,6 +21,7 @@ const (
 	commentActionSHA  = "e8674b075228eee787fea43ef493e45ece1004c9"
 	minimumReleaseAge = "24"
 	minimumSHAPins    = 4
+	reviewedHeadSHA   = "0123456789abcdef0123456789abcdef01234567"
 )
 
 type policyFixture struct {
@@ -35,8 +36,8 @@ type policyFixture struct {
 	dependency             string
 	version                string
 	reviews                []reviewFixture
+	currentHeadSHA         string
 	wantApproval           bool
-	wantFailure            bool
 }
 
 type reviewFixture struct {
@@ -53,8 +54,9 @@ type userFixture struct {
 
 type scriptResult struct {
 	Approvals []struct {
-		Event string `json:"event"`
-		Body  string `json:"body"`
+		Event    string `json:"event"`
+		Body     string `json:"body"`
+		CommitID string `json:"commit_id"`
 	} `json:"approvals"`
 	Failures []string          `json:"failures"`
 	Thrown   string            `json:"thrown"`
@@ -152,6 +154,7 @@ func TestCIDependenciesWorkflow_StructureEnforcesGuardedApproval(t *testing.T) {
 		"DEPENDABOT_REVIEW_RESULT",
 		"RISK",
 		"RELEASE_AGE",
+		"EXPECTED_HEAD_SHA",
 	} {
 		assertMatches(t, approvalJob, `(?m)^\s+`+environmentName+`:\s+[^\n]+$`, environmentName+" environment input")
 	}
@@ -302,25 +305,30 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 			risk: "low", releaseAge: "48", wantApproval: true,
 			reviews: []reviewFixture{review(1, "reviewer[bot]", "Bot", "CHANGES_REQUESTED", "2026-09-15T08:00:00Z")},
 		},
+		{
+			name:   "pull request head changed after review",
+			author: dependabotAuthor, depsReviewResult: "success", dependabotReviewResult: "success",
+			risk: "low", releaseAge: "48", currentHeadSHA: "fedcba9876543210fedcba9876543210fedcba98",
+		},
 	}
 	for _, releaseAge := range []string{"24e0", "0x18", "+24", "Infinity", "NaN"} {
 		fixtures = append(fixtures, policyFixture{
 			name:   fmt.Sprintf("reject non-decimal release age %q", releaseAge),
 			author: dependabotAuthor, depsReviewResult: "success", dependabotReviewResult: "success",
-			risk: "low", releaseAge: releaseAge, wantFailure: true,
+			risk: "low", releaseAge: releaseAge,
 		})
 	}
 	fixtures = append(fixtures, policyFixture{
 		name:   "reject decimal overflow",
 		author: dependabotAuthor, depsReviewResult: "success", dependabotReviewResult: "success",
-		risk: "low", releaseAge: strings.Repeat("9", 400), wantFailure: true,
+		risk: "low", releaseAge: strings.Repeat("9", 400),
 	})
 
 	for _, fixture := range fixtures {
 		t.Run(fixture.name, func(t *testing.T) {
 			result := executeApprovalScript(t, script, fixture)
-			if fixture.wantFailure && (len(result.Failures) == 0 || result.Thrown == "") {
-				t.Errorf("invalid release age did not fail closed: failures=%v thrown=%q", result.Failures, result.Thrown)
+			if !fixture.wantApproval && (len(result.Failures) == 0 || result.Thrown == "") {
+				t.Errorf("unsafe policy did not fail closed: failures=%v thrown=%q", result.Failures, result.Thrown)
 			}
 			gotApproval := len(result.Approvals) > 0
 			if gotApproval != fixture.wantApproval {
@@ -335,6 +343,9 @@ func TestCIDependenciesWorkflow_ApprovalScriptEvaluatesPolicyFixtures(t *testing
 			approval := result.Approvals[0]
 			if approval.Event != "APPROVE" {
 				t.Errorf("review event = %q, want APPROVE", approval.Event)
+			}
+			if approval.CommitID != reviewedHeadSHA {
+				t.Errorf("review commit_id = %q, want %q", approval.CommitID, reviewedHeadSHA)
 			}
 			for _, evidence := range []string{fixture.depsReviewResult, fixture.risk, fixture.releaseAge, fixture.dependency, fixture.version} {
 				if !strings.Contains(approval.Body, evidence) {
@@ -589,9 +600,14 @@ func executeApprovalScript(t *testing.T, script string, fixture policyFixture) s
 	t.Helper()
 	nodePath := requireNode(t)
 
+	currentHeadSHA := fixture.currentHeadSHA
+	if currentHeadSHA == "" {
+		currentHeadSHA = reviewedHeadSHA
+	}
 	fixtureJSON, err := json.Marshal(map[string]any{
-		"author":  fixture.author,
-		"reviews": fixture.reviews,
+		"author":         fixture.author,
+		"reviews":        fixture.reviews,
+		"currentHeadSHA": currentHeadSHA,
 	})
 	if err != nil {
 		t.Fatalf("marshal policy fixture: %v", err)
@@ -610,6 +626,7 @@ const github = {
   },
   rest: {
     pulls: {
+      get: async () => ({data: {head: {sha: fixture.currentHeadSHA}}}),
       listReviews: async () => ({data: fixture.reviews || []}),
       createReview: async (request) => { approvals.push(request); return {data: request}; }
     }
@@ -730,6 +747,7 @@ func policyEnvironment(fixture policyFixture) []string {
 	values := map[string]string{
 		"EVENT_NAME":               "pull_request",
 		"PR_AUTHOR":                fixture.author,
+		"EXPECTED_HEAD_SHA":        reviewedHeadSHA,
 		"DEPS_REVIEW_RESULT":       fixture.depsReviewResult,
 		"REVIEW_CONCLUSION":        reviewConclusion,
 		"DEPENDABOT_REVIEW_RESULT": fixture.dependabotReviewResult,
