@@ -102,7 +102,9 @@ func mcpHandler() http.HandlerFunc {
 
 		// Respond in SSE format, matching the MCP Streamable HTTP transport.
 		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprintf(w, "event: message\ndata: %s\n\n", respJSON)
+		if _, err := fmt.Fprintf(w, "event: message\ndata: %s\n\n", respJSON); err != nil {
+			return
+		}
 	}
 }
 
@@ -112,7 +114,11 @@ func testStore(t *testing.T) *db.Store {
 	if err != nil {
 		t.Fatalf("OpenMemory: %v", err)
 	}
-	t.Cleanup(func() { store.Close() })
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	})
 	return store
 }
 
@@ -179,7 +185,9 @@ func TestCheckDatabase_Healthy(t *testing.T) {
 
 func TestCheckDatabase_Closed(t *testing.T) {
 	store := testStore(t)
-	store.Close()
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
 
 	result := checkDatabase(store)
 	if result.Status != "fail" {
@@ -243,7 +251,10 @@ func TestCheckDewey_RPCError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		var req map[string]any
-		json.Unmarshal(body, &req)
+		if err := json.Unmarshal(body, &req); err != nil {
+			http.Error(w, "decode error", http.StatusBadRequest)
+			return
+		}
 
 		method, _ := req["method"].(string)
 		id, _ := req["id"].(float64)
@@ -254,12 +265,14 @@ func TestCheckDewey_RPCError(t *testing.T) {
 		if method == "initialize" {
 			resp := fmt.Sprintf(`{"jsonrpc":"2.0","result":{"capabilities":{},"protocolVersion":"2025-03-26","serverInfo":{"name":"dewey","version":"test"}},"id":%d}`, int(id))
 			w.Header().Set("Mcp-Session-Id", "test-session")
-			fmt.Fprintf(w, "event: message\ndata: %s\n\n", resp)
+			if _, err := fmt.Fprintf(w, "event: message\ndata: %s\n\n", resp); err != nil {
+				return
+			}
 			return
 		}
 
 		// Return error for tools/call.
-		fmt.Fprintf(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32601,\"message\":\"method not found\"},\"id\":%d}\n\n", int(id))
+		_, _ = fmt.Fprintf(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32601,\"message\":\"method not found\"},\"id\":%d}\n\n", int(id))
 	}))
 	defer srv.Close()
 

@@ -14,14 +14,14 @@ func Review(projectKey, epicID, taskID string, filesTouched []string) string {
 	var sb strings.Builder
 
 	sb.WriteString("## Code Review\n\n")
-	sb.WriteString(fmt.Sprintf("**Project:** %s\n", projectKey))
-	sb.WriteString(fmt.Sprintf("**Epic:** %s\n", epicID))
-	sb.WriteString(fmt.Sprintf("**Task:** %s\n\n", taskID))
+	_, _ = fmt.Fprintf(&sb, "**Project:** %s\n", projectKey)
+	_, _ = fmt.Fprintf(&sb, "**Epic:** %s\n", epicID)
+	_, _ = fmt.Fprintf(&sb, "**Task:** %s\n\n", taskID)
 
 	if len(filesTouched) > 0 {
 		sb.WriteString("### Files Modified\n\n")
 		for _, f := range filesTouched {
-			sb.WriteString(fmt.Sprintf("- `%s`\n", f))
+			_, _ = fmt.Fprintf(&sb, "- `%s`\n", f)
 		}
 		sb.WriteString("\n")
 	}
@@ -54,10 +54,12 @@ func ReviewFeedback(store *db.Store, projectKey, taskID, workerID, status, issue
 
 	// Count previous review attempts for this task.
 	var attemptCount int
-	store.DB.QueryRow(
+	if err := store.DB.QueryRow(
 		"SELECT COUNT(*) FROM events WHERE type = 'review_feedback' AND json_extract(payload, '$.task_id') = ?",
 		taskID,
-	).Scan(&attemptCount)
+	).Scan(&attemptCount); err != nil {
+		return nil, fmt.Errorf("count review attempts: %w", err)
+	}
 
 	attempt := attemptCount + 1
 
@@ -142,13 +144,13 @@ func EvaluationPrompt(beadID, title string, filesTouched []string) string {
 	var sb strings.Builder
 
 	sb.WriteString("## Self-Evaluation\n\n")
-	sb.WriteString(fmt.Sprintf("**Task:** %s\n", title))
-	sb.WriteString(fmt.Sprintf("**Cell ID:** %s\n\n", beadID))
+	_, _ = fmt.Fprintf(&sb, "**Task:** %s\n", title)
+	_, _ = fmt.Fprintf(&sb, "**Cell ID:** %s\n\n", beadID)
 
 	if len(filesTouched) > 0 {
 		sb.WriteString("### Files Modified\n\n")
 		for _, f := range filesTouched {
-			sb.WriteString(fmt.Sprintf("- `%s`\n", f))
+			_, _ = fmt.Fprintf(&sb, "- `%s`\n", f)
 		}
 		sb.WriteString("\n")
 	}

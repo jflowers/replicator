@@ -6,7 +6,9 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"io"
 
 	_ "modernc.org/sqlite"
 )
@@ -29,14 +31,12 @@ func Open(path string) (*Store, error) {
 	sqlDB.SetMaxOpenConns(1)
 
 	if err := sqlDB.Ping(); err != nil {
-		sqlDB.Close()
-		return nil, fmt.Errorf("ping sqlite: %w", err)
+		return nil, closeOnOpenError(fmt.Errorf("ping sqlite: %w", err), sqlDB)
 	}
 
 	store := &Store{DB: sqlDB}
 	if err := store.migrate(); err != nil {
-		sqlDB.Close()
-		return nil, fmt.Errorf("migrate: %w", err)
+		return nil, closeOnOpenError(fmt.Errorf("migrate: %w", err), sqlDB)
 	}
 
 	return store, nil
@@ -50,10 +50,19 @@ func OpenMemory() (*Store, error) {
 	}
 	store := &Store{DB: sqlDB}
 	if err := store.migrate(); err != nil {
-		sqlDB.Close()
-		return nil, err
+		return nil, closeOnOpenError(fmt.Errorf("migrate memory database: %w", err), sqlDB)
 	}
 	return store, nil
+}
+
+func closeOnOpenError(primary error, closer io.Closer) error {
+	if primary == nil {
+		return nil
+	}
+	if closeErr := closer.Close(); closeErr != nil {
+		return errors.Join(primary, fmt.Errorf("close database after open failure: %w", closeErr))
+	}
+	return primary
 }
 
 // Close closes the database connection.

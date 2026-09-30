@@ -114,7 +114,9 @@ func commsInbox(store *db.Store) *registry.Tool {
 				UrgentOnly bool   `json:"urgent_only"`
 			}
 			if len(args) > 0 {
-				json.Unmarshal(args, &input)
+				if err := json.Unmarshal(args, &input); err != nil {
+					return "", err
+				}
 			}
 			agentName := input.AgentName
 			if agentName == "" {
@@ -214,7 +216,9 @@ func commsRelease(store *db.Store) *registry.Tool {
 				ReservationIDs []int    `json:"reservation_ids"`
 			}
 			if len(args) > 0 {
-				json.Unmarshal(args, &input)
+				if err := json.Unmarshal(args, &input); err != nil {
+					return "", err
+				}
 			}
 			if err := comms.Release(store, input.Paths, input.ReservationIDs); err != nil {
 				return "", err
@@ -304,9 +308,15 @@ func commsHealth(store *db.Store) *registry.Tool {
 		Execute: func(args json.RawMessage) (string, error) {
 			// Verify the database is accessible by counting key tables.
 			var agentCount, msgCount, resCount int
-			store.DB.QueryRow("SELECT COUNT(*) FROM agents").Scan(&agentCount)
-			store.DB.QueryRow("SELECT COUNT(*) FROM messages").Scan(&msgCount)
-			store.DB.QueryRow("SELECT COUNT(*) FROM reservations").Scan(&resCount)
+			if err := store.DB.QueryRow("SELECT COUNT(*) FROM agents").Scan(&agentCount); err != nil {
+				return "", fmt.Errorf("count agents: %w", err)
+			}
+			if err := store.DB.QueryRow("SELECT COUNT(*) FROM messages").Scan(&msgCount); err != nil {
+				return "", fmt.Errorf("count messages: %w", err)
+			}
+			if err := store.DB.QueryRow("SELECT COUNT(*) FROM reservations").Scan(&resCount); err != nil {
+				return "", fmt.Errorf("count reservations: %w", err)
+			}
 
 			result := map[string]any{
 				"status":       "healthy",

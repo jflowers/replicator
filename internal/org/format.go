@@ -20,7 +20,9 @@ func FormatCells(cells []Cell, w io.Writer) error {
 	styles := ui.NewStyles(w)
 
 	if len(cells) == 0 {
-		fmt.Fprintln(w, styles.Dim.Render("No cells found"))
+		if _, err := fmt.Fprintln(w, styles.Dim.Render("No cells found")); err != nil {
+			return fmt.Errorf("write cells output: %w", err)
+		}
 		return nil
 	}
 
@@ -76,6 +78,8 @@ func FormatCells(cells []Cell, w io.Writer) error {
 	// Constrain width for consistent terminal rendering.
 	t.Width(80)
 
-	fmt.Fprintln(w, t.String())
+	if _, err := fmt.Fprintln(w, t.String()); err != nil {
+		return fmt.Errorf("write cells output: %w", err)
+	}
 	return nil
 }

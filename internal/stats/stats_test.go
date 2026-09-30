@@ -2,11 +2,36 @@ package stats
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/unbound-force/replicator/internal/db"
 )
+
+type failingWriter struct {
+	err error
+}
+
+func (w failingWriter) Write([]byte) (int, error) {
+	return 0, w.err
+}
+
+func TestCombineRowsCloseError_PreservesBothErrors(t *testing.T) {
+	errScan := errors.New("scan sentinel")
+	errClose := errors.New("close sentinel")
+	err := combineRowsCloseError(errScan, errClose)
+	if !errors.Is(err, errScan) || !errors.Is(err, errClose) {
+		t.Fatalf("combined error %v does not preserve both sentinels", err)
+	}
+}
+
+func TestCombineRowsCloseError_NilCloseReturnsPrimary(t *testing.T) {
+	errPrimary := errors.New("primary sentinel")
+	if err := combineRowsCloseError(errPrimary, nil); !errors.Is(err, errPrimary) {
+		t.Fatalf("combineRowsCloseError() = %v, want primary error", err)
+	}
+}
 
 func testStore(t *testing.T) *db.Store {
 	t.Helper()
@@ -14,7 +39,11 @@ func testStore(t *testing.T) *db.Store {
 	if err != nil {
 		t.Fatalf("OpenMemory: %v", err)
 	}
-	t.Cleanup(func() { store.Close() })
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	})
 	return store
 }
 
@@ -47,9 +76,13 @@ func TestRun_WithEvents(t *testing.T) {
 
 	// Insert some events.
 	for i := 0; i < 3; i++ {
-		store.DB.Exec(`INSERT INTO events (type, payload, project_key) VALUES (?, '{}', 'test')`, "forge_init")
+		if _, err := store.DB.Exec(`INSERT INTO events (type, payload, project_key) VALUES (?, '{}', 'test')`, "forge_init"); err != nil {
+			t.Fatalf("insert event: %v", err)
+		}
 	}
-	store.DB.Exec(`INSERT INTO events (type, payload, project_key) VALUES (?, '{}', 'test')`, "forge_complete")
+	if _, err := store.DB.Exec(`INSERT INTO events (type, payload, project_key) VALUES (?, '{}', 'test')`, "forge_complete"); err != nil {
+		t.Fatalf("insert event: %v", err)
+	}
 
 	var buf bytes.Buffer
 	err := Run(store, &buf)
@@ -70,9 +103,17 @@ func TestRun_WithCells(t *testing.T) {
 	store := testStore(t)
 
 	// Insert cells with different statuses.
-	store.DB.Exec(`INSERT INTO beads (id, title, status) VALUES ('c1', 'Task 1', 'open')`)
-	store.DB.Exec(`INSERT INTO beads (id, title, status) VALUES ('c2', 'Task 2', 'open')`)
-	store.DB.Exec(`INSERT INTO beads (id, title, status) VALUES ('c3', 'Task 3', 'closed')`)
+	if _, err := store.DB.Exec(`INSERT INTO beads (id, title, status) VALUES ('c1', 'Task 1', 'open')`); err != nil {
+		t.Fatalf("insert cell: %v", err)
+	}
+	for _, query := range []string{
+		`INSERT INTO beads (id, title, status) VALUES ('c2', 'Task 2', 'open')`,
+		`INSERT INTO beads (id, title, status) VALUES ('c3', 'Task 3', 'closed')`,
+	} {
+		if _, err := store.DB.Exec(query); err != nil {
+			t.Fatalf("insert cell: %v", err)
+		}
+	}
 
 	var buf bytes.Buffer
 	err := Run(store, &buf)
@@ -97,7 +138,9 @@ func TestRun_RecentActivity(t *testing.T) {
 
 	// Insert events with current timestamp (default).
 	for i := 0; i < 5; i++ {
-		store.DB.Exec(`INSERT INTO events (type, payload, project_key) VALUES ('test', '{}', 'test')`)
+		if _, err := store.DB.Exec(`INSERT INTO events (type, payload, project_key) VALUES ('test', '{}', 'test')`); err != nil {
+			t.Fatalf("insert event: %v", err)
+		}
 	}
 
 	var buf bytes.Buffer
@@ -123,5 +166,60 @@ func TestRun_WritesToWriter(t *testing.T) {
 
 	if buf.Len() == 0 {
 		t.Error("expected non-empty output")
+	}
+}
+
+func TestRun_WriterFailure(t *testing.T) {
+	store := testStore(t)
+	errWrite := errors.New("write sentinel")
+
+	err := Run(store, failingWriter{err: errWrite})
+	if !errors.Is(err, errWrite) {
+		t.Fatalf("Run() error = %v, want write sentinel", err)
+	}
+}
+
+func TestQueries_ClosedDatabase(t *testing.T) {
+	queries := []struct {
+		name string
+		run  func(*db.Store) error
+	}{
+		{
+			name: "event counts",
+			run: func(store *db.Store) error {
+				_, err := queryEventCounts(store)
+				return err
+			},
+		},
+		{
+			name: "recent events",
+			run: func(store *db.Store) error {
+				_, err := queryRecentEvents(store)
+				return err
+			},
+		},
+		{
+			name: "cell counts",
+			run: func(store *db.Store) error {
+				_, err := queryCellCounts(store)
+				return err
+			},
+		},
+	}
+
+	for _, query := range queries {
+		t.Run(query.name, func(t *testing.T) {
+			store, err := db.OpenMemory()
+			if err != nil {
+				t.Fatalf("OpenMemory: %v", err)
+			}
+			if err := store.Close(); err != nil {
+				t.Fatalf("Close: %v", err)
+			}
+
+			if err := query.run(store); err == nil {
+				t.Fatal("query on closed database returned nil error")
+			}
+		})
 	}
 }

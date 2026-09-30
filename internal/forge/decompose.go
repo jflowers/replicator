@@ -47,12 +47,12 @@ func PlanPrompt(task, strategy, context string, maxSubtasks int) string {
 
 	var sb strings.Builder
 	sb.WriteString("## Task Decomposition Plan\n\n")
-	sb.WriteString(fmt.Sprintf("**Strategy:** %s\n", strategy))
-	sb.WriteString(fmt.Sprintf("**Max Subtasks:** %d\n\n", maxSubtasks))
-	sb.WriteString(fmt.Sprintf("**Task:** %s\n\n", task))
+	_, _ = fmt.Fprintf(&sb, "**Strategy:** %s\n", strategy) // strings.Builder writes cannot fail.
+	_, _ = fmt.Fprintf(&sb, "**Max Subtasks:** %d\n\n", maxSubtasks)
+	_, _ = fmt.Fprintf(&sb, "**Task:** %s\n\n", task)
 
 	if context != "" {
-		sb.WriteString(fmt.Sprintf("**Context:**\n%s\n\n", context))
+		_, _ = fmt.Fprintf(&sb, "**Context:**\n%s\n\n", context)
 	}
 
 	sb.WriteString("### Instructions\n\n")
@@ -96,11 +96,11 @@ func Decompose(task, context string, maxSubtasks int) string {
 
 	var sb strings.Builder
 	sb.WriteString("## Task Decomposition\n\n")
-	sb.WriteString(fmt.Sprintf("Break the following task into at most %d independent subtasks.\n\n", maxSubtasks))
-	sb.WriteString(fmt.Sprintf("**Task:** %s\n\n", task))
+	_, _ = fmt.Fprintf(&sb, "Break the following task into at most %d independent subtasks.\n\n", maxSubtasks)
+	_, _ = fmt.Fprintf(&sb, "**Task:** %s\n\n", task)
 
 	if context != "" {
-		sb.WriteString(fmt.Sprintf("**Context:**\n%s\n\n", context))
+		_, _ = fmt.Fprintf(&sb, "**Context:**\n%s\n\n", context)
 	}
 
 	sb.WriteString("### Requirements\n\n")

@@ -2,20 +2,26 @@ package forge
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/unbound-force/replicator/internal/db"
 )
 
 // GetStrategyInsights queries the events table for historical success rates by strategy.
-func GetStrategyInsights(store *db.Store, task string) (map[string]any, error) {
+func GetStrategyInsights(store *db.Store, task string) (result map[string]any, err error) {
 	rows, err := store.DB.Query(
 		"SELECT payload FROM events WHERE type = 'forge_outcome'",
 	)
 	if err != nil {
 		return nil, fmt.Errorf("query outcomes: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			result = nil
+			err = errors.Join(err, fmt.Errorf("close outcome rows: %w", closeErr))
+		}
+	}()
 
 	type strategyStats struct {
 		Total   int `json:"total"`
@@ -46,6 +52,9 @@ func GetStrategyInsights(store *db.Store, task string) (map[string]any, error) {
 		if success, ok := payload["success"].(bool); ok && success {
 			stats[strategy].Success++
 		}
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, fmt.Errorf("iterate outcomes: %w", rowsErr)
 	}
 
 	// Calculate success rates.
@@ -82,7 +91,7 @@ func GetStrategyInsights(store *db.Store, task string) (map[string]any, error) {
 }
 
 // GetFileInsights queries the events table for file-specific gotchas.
-func GetFileInsights(store *db.Store, files []string) (map[string]any, error) {
+func GetFileInsights(store *db.Store, files []string) (result map[string]any, err error) {
 	if len(files) == 0 {
 		return map[string]any{
 			"files":    files,
@@ -96,7 +105,12 @@ func GetFileInsights(store *db.Store, files []string) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("query outcomes: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			result = nil
+			err = errors.Join(err, fmt.Errorf("close outcome rows: %w", closeErr))
+		}
+	}()
 
 	// Build a set of target files for fast lookup.
 	fileSet := map[string]bool{}
@@ -146,6 +160,9 @@ func GetFileInsights(store *db.Store, files []string) (map[string]any, error) {
 			insights[fStr].ErrorCount += errorCount
 		}
 	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, fmt.Errorf("iterate outcomes: %w", rowsErr)
+	}
 
 	return map[string]any{
 		"files":    files,
@@ -154,14 +171,19 @@ func GetFileInsights(store *db.Store, files []string) (map[string]any, error) {
 }
 
 // GetPatternInsights queries the events table for the top 5 most frequent failure patterns.
-func GetPatternInsights(store *db.Store) (map[string]any, error) {
+func GetPatternInsights(store *db.Store) (result map[string]any, err error) {
 	rows, err := store.DB.Query(
 		"SELECT payload FROM events WHERE type = 'forge_outcome'",
 	)
 	if err != nil {
 		return nil, fmt.Errorf("query outcomes: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			result = nil
+			err = errors.Join(err, fmt.Errorf("close outcome rows: %w", closeErr))
+		}
+	}()
 
 	patternCounts := map[string]int{}
 	totalOutcomes := 0
@@ -199,6 +221,9 @@ func GetPatternInsights(store *db.Store) (map[string]any, error) {
 				patternCounts["required_retries"]++
 			}
 		}
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, fmt.Errorf("iterate outcomes: %w", rowsErr)
 	}
 
 	// Sort by count and take top 5.

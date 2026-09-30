@@ -6,8 +6,10 @@
 package stats
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/unbound-force/replicator/internal/db"
 	"github.com/unbound-force/replicator/internal/ui"
@@ -22,6 +24,9 @@ type eventCount struct {
 // Run queries the database for statistics and writes a formatted report.
 func Run(store *db.Store, w io.Writer) error {
 	styles := ui.NewStyles(w)
+	var output strings.Builder
+	writeLine := func(values ...any) { _, _ = fmt.Fprintln(&output, values...) }
+	writeFormat := func(format string, values ...any) { _, _ = fmt.Fprintf(&output, format, values...) }
 
 	// Events by type.
 	eventCounts, err := queryEventCounts(store)
@@ -48,33 +53,36 @@ func Run(store *db.Store, w io.Writer) error {
 	}
 
 	// Print report with styled headers.
-	fmt.Fprintln(w, styles.Title.Render("📊 Replicator Stats"))
-	fmt.Fprintln(w)
+	writeLine(styles.Title.Render("📊 Replicator Stats"))
+	writeLine()
 
-	fmt.Fprintln(w, styles.Bold.Render("Events by Type:"))
+	writeLine(styles.Bold.Render("Events by Type:"))
 	if len(eventCounts) == 0 {
-		fmt.Fprintln(w, styles.Dim.Render("  (no events)"))
+		writeLine(styles.Dim.Render("  (no events)"))
 	}
 	for _, ec := range eventCounts {
-		fmt.Fprintf(w, "  %-30s %d\n", ec.Type, ec.Count)
+		writeFormat("  %-30s %d\n", ec.Type, ec.Count)
 	}
-	fmt.Fprintln(w)
+	writeLine()
 
-	fmt.Fprintf(w, "%s %d events\n", styles.Bold.Render("Recent Activity (24h):"), recentCount)
-	fmt.Fprintln(w)
+	writeFormat("%s %d events\n", styles.Bold.Render("Recent Activity (24h):"), recentCount)
+	writeLine()
 
-	fmt.Fprintln(w, styles.Bold.Render(fmt.Sprintf("Cells (%d total):", totalCells)))
+	writeLine(styles.Bold.Render(fmt.Sprintf("Cells (%d total):", totalCells)))
 	if len(cellCounts) == 0 {
-		fmt.Fprintln(w, styles.Dim.Render("  (no cells)"))
+		writeLine(styles.Dim.Render("  (no cells)"))
 	}
 	for _, cc := range cellCounts {
-		fmt.Fprintf(w, "  %-15s %d\n", cc.Type, cc.Count)
+		writeFormat("  %-15s %d\n", cc.Type, cc.Count)
 	}
 
+	if _, err := io.WriteString(w, output.String()); err != nil {
+		return fmt.Errorf("write stats report: %w", err)
+	}
 	return nil
 }
 
-func queryEventCounts(store *db.Store) ([]eventCount, error) {
+func queryEventCounts(store *db.Store) (counts []eventCount, err error) {
 	rows, err := store.DB.Query(`
 		SELECT type, COUNT(*) as count
 		FROM events
@@ -83,9 +91,13 @@ func queryEventCounts(store *db.Store) ([]eventCount, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			counts = nil
+			err = combineRowsCloseError(err, closeErr)
+		}
+	}()
 
-	var counts []eventCount
 	for rows.Next() {
 		var ec eventCount
 		if err := rows.Scan(&ec.Type, &ec.Count); err != nil {
@@ -105,7 +117,7 @@ func queryRecentEvents(store *db.Store) (int, error) {
 	return count, err
 }
 
-func queryCellCounts(store *db.Store) ([]eventCount, error) {
+func queryCellCounts(store *db.Store) (counts []eventCount, err error) {
 	rows, err := store.DB.Query(`
 		SELECT status, COUNT(*) as count
 		FROM beads
@@ -114,9 +126,13 @@ func queryCellCounts(store *db.Store) ([]eventCount, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			counts = nil
+			err = combineRowsCloseError(err, closeErr)
+		}
+	}()
 
-	var counts []eventCount
 	for rows.Next() {
 		var ec eventCount
 		if err := rows.Scan(&ec.Type, &ec.Count); err != nil {
@@ -125,4 +141,11 @@ func queryCellCounts(store *db.Store) ([]eventCount, error) {
 		counts = append(counts, ec)
 	}
 	return counts, rows.Err()
+}
+
+func combineRowsCloseError(primary, closeErr error) error {
+	if closeErr == nil {
+		return primary
+	}
+	return errors.Join(primary, fmt.Errorf("close query rows: %w", closeErr))
 }

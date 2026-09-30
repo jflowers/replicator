@@ -29,8 +29,12 @@ func TestSync(t *testing.T) {
 	}
 
 	// Create some cells.
-	CreateCell(store, CreateCellInput{Title: "Task A"})
-	CreateCell(store, CreateCellInput{Title: "Task B", Type: "bug"})
+	if _, err := CreateCell(store, CreateCellInput{Title: "Task A"}); err != nil {
+		t.Fatalf("CreateCell: %v", err)
+	}
+	if _, err := CreateCell(store, CreateCellInput{Title: "Task B", Type: "bug"}); err != nil {
+		t.Fatalf("CreateCell: %v", err)
+	}
 
 	// Run sync.
 	if err := Sync(store, dir); err != nil {

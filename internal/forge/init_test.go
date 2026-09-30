@@ -12,7 +12,11 @@ func testStore(t *testing.T) *db.Store {
 	if err != nil {
 		t.Fatalf("OpenMemory: %v", err)
 	}
-	t.Cleanup(func() { store.Close() })
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	})
 	return store
 }
 
@@ -58,10 +62,14 @@ func TestInit_MissingProjectPath(t *testing.T) {
 func TestInit_RecordsEvent(t *testing.T) {
 	store := testStore(t)
 
-	Init(store, "/tmp/project", "worktree")
+	if _, err := Init(store, "/tmp/project", "worktree"); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
 
 	var count int
-	store.DB.QueryRow("SELECT COUNT(*) FROM events WHERE type = 'forge_init'").Scan(&count)
+	if err := store.DB.QueryRow("SELECT COUNT(*) FROM events WHERE type = 'forge_init'").Scan(&count); err != nil {
+		t.Fatalf("scan event count: %v", err)
+	}
 	if count != 1 {
 		t.Errorf("expected 1 forge_init event, got %d", count)
 	}

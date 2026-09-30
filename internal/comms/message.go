@@ -2,6 +2,7 @@ package comms
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/unbound-force/replicator/internal/db"
@@ -73,7 +74,7 @@ func Send(store *db.Store, fromAgent string, input SendInput) error {
 }
 
 // Inbox returns message summaries (no body) for an agent, max 5 results.
-func Inbox(store *db.Store, agentName string, limit int, urgentOnly bool) ([]MessageSummary, error) {
+func Inbox(store *db.Store, agentName string, limit int, urgentOnly bool) (summaries []MessageSummary, err error) {
 	if limit <= 0 || limit > 5 {
 		limit = 5
 	}
@@ -97,9 +98,13 @@ func Inbox(store *db.Store, agentName string, limit int, urgentOnly bool) ([]Mes
 	if err != nil {
 		return nil, fmt.Errorf("query inbox: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			summaries = nil
+			err = combineInboxCloseError(err, closeErr)
+		}
+	}()
 
-	var summaries []MessageSummary
 	for rows.Next() {
 		var s MessageSummary
 		var threadID *string
@@ -116,11 +121,21 @@ func Inbox(store *db.Store, agentName string, limit int, urgentOnly bool) ([]Mes
 		s.Acknowledged = acked == 1
 		summaries = append(summaries, s)
 	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, fmt.Errorf("iterate inbox: %w", rowsErr)
+	}
 
 	if summaries == nil {
 		summaries = []MessageSummary{}
 	}
 	return summaries, nil
+}
+
+func combineInboxCloseError(primary, closeErr error) error {
+	if closeErr == nil {
+		return primary
+	}
+	return errors.Join(primary, fmt.Errorf("close inbox rows: %w", closeErr))
 }
 
 // ReadMessage returns a full message by ID.

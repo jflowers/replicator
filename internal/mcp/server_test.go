@@ -52,7 +52,11 @@ func testServer(t *testing.T) (*Server, *db.Store, *testLogger) {
 	if err != nil {
 		t.Fatalf("OpenMemory: %v", err)
 	}
-	t.Cleanup(func() { store.Close() })
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	})
 
 	reg := registry.New()
 	org.Register(reg, store)
@@ -119,7 +123,9 @@ func TestToolsCall_OrgCells_Empty(t *testing.T) {
 	})
 
 	var callResult toolsCallResult
-	json.Unmarshal(result, &callResult)
+	if err := json.Unmarshal(result, &callResult); err != nil {
+		t.Fatalf("unmarshal call result: %v", err)
+	}
 
 	if len(callResult.Content) == 0 {
 		t.Fatal("expected content in response")
@@ -137,14 +143,18 @@ func TestToolsCall_OrgCreate(t *testing.T) {
 	})
 
 	var callResult toolsCallResult
-	json.Unmarshal(result, &callResult)
+	if err := json.Unmarshal(result, &callResult); err != nil {
+		t.Fatalf("unmarshal call result: %v", err)
+	}
 
 	if len(callResult.Content) == 0 {
 		t.Fatal("expected content")
 	}
 
 	var cell map[string]any
-	json.Unmarshal([]byte(callResult.Content[0].Text), &cell)
+	if err := json.Unmarshal([]byte(callResult.Content[0].Text), &cell); err != nil {
+		t.Fatalf("unmarshal cell: %v", err)
+	}
 
 	if cell["title"] != "Test cell" {
 		t.Errorf("title = %v, want %q", cell["title"], "Test cell")
@@ -170,10 +180,14 @@ func TestToolsCall_CreateThenQuery(t *testing.T) {
 	})
 
 	var callResult toolsCallResult
-	json.Unmarshal(result, &callResult)
+	if err := json.Unmarshal(result, &callResult); err != nil {
+		t.Fatalf("unmarshal call result: %v", err)
+	}
 
 	var cells []map[string]any
-	json.Unmarshal([]byte(callResult.Content[0].Text), &cells)
+	if err := json.Unmarshal([]byte(callResult.Content[0].Text), &cells); err != nil {
+		t.Fatalf("unmarshal cells: %v", err)
+	}
 
 	if len(cells) != 1 {
 		t.Fatalf("expected 1 cell, got %d", len(cells))
@@ -188,10 +202,14 @@ func TestToolsCall_UnknownTool(t *testing.T) {
 
 	req := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"nonexistent","arguments":{}}}` + "\n"
 	var buf bytes.Buffer
-	s.Serve(strings.NewReader(req), &buf)
+	if err := s.Serve(strings.NewReader(req), &buf); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
 
 	var resp jsonrpcResponse
-	json.Unmarshal(buf.Bytes(), &resp)
+	if err := json.Unmarshal(buf.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
 
 	if resp.Error == nil {
 		t.Error("expected error for unknown tool")
@@ -203,7 +221,9 @@ func TestInitialize(t *testing.T) {
 	result := call(t, s, "initialize", map[string]any{})
 
 	var initResult map[string]any
-	json.Unmarshal(result, &initResult)
+	if err := json.Unmarshal(result, &initResult); err != nil {
+		t.Fatalf("unmarshal initialize result: %v", err)
+	}
 
 	if initResult["protocolVersion"] != "2024-11-05" {
 		t.Errorf("protocolVersion = %v", initResult["protocolVersion"])
@@ -278,7 +298,11 @@ func TestNewServer_NilLogger(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenMemory: %v", err)
 	}
-	defer store.Close()
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	})
 
 	reg := registry.New()
 	org.Register(reg, store)

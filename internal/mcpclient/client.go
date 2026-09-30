@@ -133,7 +133,7 @@ func (c *Client) initSession() error {
 		"id":      c.nextID.Add(1) - 1,
 		"params": map[string]any{
 			"protocolVersion": "2025-03-26",
-			"capabilities":   map[string]any{},
+			"capabilities":    map[string]any{},
 			"clientInfo": map[string]any{
 				"name":    c.config.Name,
 				"version": c.config.Version,
@@ -157,7 +157,10 @@ func (c *Client) initSession() error {
 	if err != nil {
 		return &UnavailableError{Cause: err}
 	}
-	defer resp.Body.Close()
+	defer func() {
+		// Body data needed by the caller has been consumed; close errors are non-actionable.
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
@@ -217,7 +220,10 @@ func (c *Client) doToolsCall(method string, params any, sessionID string) (json.
 	if err != nil {
 		return nil, 0, &UnavailableError{Cause: err}
 	}
-	defer resp.Body.Close()
+	defer func() {
+		// Body data needed by the caller has been consumed; close errors are non-actionable.
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))

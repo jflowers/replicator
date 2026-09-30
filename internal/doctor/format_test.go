@@ -2,10 +2,15 @@ package doctor
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 )
+
+type failingWriter struct{ err error }
+
+func (w failingWriter) Write([]byte) (int, error) { return 0, w.err }
 
 func TestFormatText_Header(t *testing.T) {
 	var buf bytes.Buffer
@@ -137,5 +142,13 @@ func TestFormatText_Duration(t *testing.T) {
 	output := buf.String()
 	if !strings.Contains(output, "42ms") {
 		t.Errorf("output missing duration '42ms':\n%s", output)
+	}
+}
+
+func TestFormatText_ReturnsWriterError(t *testing.T) {
+	errWrite := errors.New("write sentinel")
+	err := FormatText([]CheckResult{{Name: "git", Status: "pass", Message: "ok"}}, failingWriter{err: errWrite})
+	if !errors.Is(err, errWrite) {
+		t.Fatalf("error %v does not preserve %v", err, errWrite)
 	}
 }

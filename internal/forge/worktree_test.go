@@ -1,6 +1,7 @@
 package forge
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -82,13 +83,21 @@ func TestWorktreeMerge(t *testing.T) {
 	commit, _ := gitutil.CurrentCommit(repo)
 
 	// Create worktree and make a commit.
-	WorktreeCreate(repo, "merge-task", commit)
+	if _, err := WorktreeCreate(repo, "merge-task", commit); err != nil {
+		t.Fatalf("WorktreeCreate: %v", err)
+	}
 	wtPath := filepath.Join(repo, ".worktrees", "merge-task")
 
 	f := filepath.Join(wtPath, "new.txt")
-	os.WriteFile(f, []byte("merge content\n"), 0o644)
-	gitutil.Run(wtPath, "add", ".")
-	gitutil.Run(wtPath, "commit", "-m", "worktree commit")
+	if err := os.WriteFile(f, []byte("merge content\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if _, err := gitutil.Run(wtPath, "add", "."); err != nil {
+		t.Fatalf("git add: %v", err)
+	}
+	if _, err := gitutil.Run(wtPath, "commit", "-m", "worktree commit"); err != nil {
+		t.Fatalf("git commit: %v", err)
+	}
 
 	result, err := WorktreeMerge(repo, "merge-task", commit)
 	if err != nil {
@@ -120,7 +129,9 @@ func TestWorktreeCleanup(t *testing.T) {
 	repo := initRepo(t)
 	commit, _ := gitutil.CurrentCommit(repo)
 
-	WorktreeCreate(repo, "cleanup-task", commit)
+	if _, err := WorktreeCreate(repo, "cleanup-task", commit); err != nil {
+		t.Fatalf("WorktreeCreate: %v", err)
+	}
 
 	result, err := WorktreeCleanup(repo, "cleanup-task", false)
 	if err != nil {
@@ -141,6 +152,32 @@ func TestWorktreeCleanup_Idempotent(t *testing.T) {
 	}
 	if result["status"] != "cleaned" {
 		t.Errorf("status = %v, want %q", result["status"], "cleaned")
+	}
+}
+
+func TestWorktreeCleanupWithRemover_ReturnsRemovalError(t *testing.T) {
+	errRemove := errors.New("remove sentinel: /sensitive/project: untrusted git stderr")
+	calls := 0
+	projectPath := t.TempDir()
+	worktreePath := filepath.Join(projectPath, ".worktrees", "task")
+	if err := os.MkdirAll(worktreePath, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	result, err := worktreeCleanupWithRemover(projectPath, "task", false, func(_, _ string) error {
+		calls++
+		return errRemove
+	})
+	if result != nil {
+		t.Errorf("result = %#v, want nil", result)
+	}
+	if !errors.Is(err, errRemove) {
+		t.Fatalf("error %v does not preserve %v", err, errRemove)
+	}
+	if err.Error() != "remove worktree" {
+		t.Errorf("error = %q, want sanitized operation context", err)
+	}
+	if calls != 1 {
+		t.Errorf("remove calls = %d, want 1", calls)
 	}
 }
 

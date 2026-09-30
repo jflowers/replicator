@@ -41,7 +41,9 @@ func orgCells(store *db.Store) *registry.Tool {
 		Execute: func(args json.RawMessage) (string, error) {
 			var q org.CellQuery
 			if len(args) > 0 {
-				json.Unmarshal(args, &q)
+				if err := json.Unmarshal(args, &q); err != nil {
+					return "", err
+				}
 			}
 			cells, err := org.QueryCells(store, q)
 			if err != nil {
@@ -203,7 +205,9 @@ func orgQuery(store *db.Store) *registry.Tool {
 		Execute: func(args json.RawMessage) (string, error) {
 			var q org.CellQuery
 			if len(args) > 0 {
-				json.Unmarshal(args, &q)
+				if err := json.Unmarshal(args, &q); err != nil {
+					return "", err
+				}
 			}
 			cells, err := org.QueryCells(store, q)
 			if err != nil {
@@ -280,7 +284,9 @@ func orgSync(store *db.Store) *registry.Tool {
 				ProjectPath string `json:"project_path,omitempty"`
 			}
 			if len(args) > 0 {
-				json.Unmarshal(args, &input)
+				if err := json.Unmarshal(args, &input); err != nil {
+					return "", err
+				}
 			}
 			projectPath := input.ProjectPath
 			if projectPath == "" {
@@ -309,7 +315,9 @@ func orgSessionStart(store *db.Store) *registry.Tool {
 				ActiveCellID string `json:"active_cell_id,omitempty"`
 			}
 			if len(args) > 0 {
-				json.Unmarshal(args, &input)
+				if err := json.Unmarshal(args, &input); err != nil {
+					return "", err
+				}
 			}
 			notes, err := org.SessionStart(store, input.ActiveCellID)
 			if err != nil {
@@ -340,7 +348,9 @@ func orgSessionEnd(store *db.Store) *registry.Tool {
 				HandoffNotes string `json:"handoff_notes,omitempty"`
 			}
 			if len(args) > 0 {
-				json.Unmarshal(args, &input)
+				if err := json.Unmarshal(args, &input); err != nil {
+					return "", err
+				}
 			}
 			if err := org.SessionEnd(store, input.HandoffNotes); err != nil {
 				return "", err

@@ -136,7 +136,9 @@ func TestBroadcast(t *testing.T) {
 	}
 
 	var count int
-	store.DB.QueryRow("SELECT COUNT(*) FROM events WHERE type = 'forge_broadcast'").Scan(&count)
+	if err := store.DB.QueryRow("SELECT COUNT(*) FROM events WHERE type = 'forge_broadcast'").Scan(&count); err != nil {
+		t.Fatalf("scan broadcast count: %v", err)
+	}
 	if count != 1 {
 		t.Errorf("expected 1 broadcast event, got %d", count)
 	}
@@ -152,7 +154,9 @@ func TestBroadcast_DefaultImportance(t *testing.T) {
 
 	// Verify default importance was set.
 	var payload string
-	store.DB.QueryRow("SELECT payload FROM events WHERE type = 'forge_broadcast'").Scan(&payload)
+	if err := store.DB.QueryRow("SELECT payload FROM events WHERE type = 'forge_broadcast'").Scan(&payload); err != nil {
+		t.Fatalf("scan broadcast payload: %v", err)
+	}
 	if !strings.Contains(payload, `"info"`) {
 		t.Errorf("expected default importance 'info' in payload: %s", payload)
 	}

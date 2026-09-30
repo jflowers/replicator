@@ -73,7 +73,8 @@ Completion gate:
    file changed. If the diff gains user-facing behavior, stop and satisfy the
    website documentation gate before completion.
 
-- [ ] 1.1 Complete all ordered remediation steps, resolve the durable finding
+- [x] 1.1 Complete all ordered remediation steps, resolve the durable finding
   inventory, and pass every completion gate before marking this task complete.
 <!-- scaffolded by uf v0.17.0 -->
 <!-- spec-review: passed -->
+<!-- code-review: passed -->

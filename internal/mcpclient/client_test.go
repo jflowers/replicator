@@ -25,17 +25,17 @@ type mcpHandler struct {
 	toolCallCount atomic.Int64
 
 	// overrides allow tests to customize behavior.
-	initStatus     int                                          // HTTP status for initialize (0 = 200)
-	noSessionID    bool                                          // omit Mcp-Session-Id header
-	toolHandler    func(name string, args json.RawMessage) any   // custom tool result
-	toolStatus     int                                           // HTTP status for tools/call (0 = 200)
-	plainJSON      bool                                          // respond with application/json instead of SSE
-	emptyBody      bool                                          // respond with empty body
-	malformedSSE   bool                                          // respond with malformed SSE
-	noDataLine     bool                                          // respond with SSE but no data: line
-	emptyContent   bool                                          // respond with empty content array
-	rejectCount    int                                            // reject this many tools/call with 400 before succeeding
-	rejectedSoFar  int
+	initStatus    int                                         // HTTP status for initialize (0 = 200)
+	noSessionID   bool                                        // omit Mcp-Session-Id header
+	toolHandler   func(name string, args json.RawMessage) any // custom tool result
+	toolStatus    int                                         // HTTP status for tools/call (0 = 200)
+	plainJSON     bool                                        // respond with application/json instead of SSE
+	emptyBody     bool                                        // respond with empty body
+	malformedSSE  bool                                        // respond with malformed SSE
+	noDataLine    bool                                        // respond with SSE but no data: line
+	emptyContent  bool                                        // respond with empty content array
+	rejectCount   int                                         // reject this many tools/call with 400 before succeeding
+	rejectedSoFar int
 }
 
 func (h *mcpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -85,7 +85,7 @@ func (h *mcpHandler) handleInitialize(w http.ResponseWriter, r *http.Request, re
 
 	result := map[string]any{
 		"protocolVersion": "2025-03-26",
-		"capabilities":   map[string]any{},
+		"capabilities":    map[string]any{},
 		"serverInfo": map[string]any{
 			"name":    "test-server",
 			"version": "1.0.0",
@@ -100,13 +100,17 @@ func (h *mcpHandler) handleInitialize(w http.ResponseWriter, r *http.Request, re
 
 	if h.plainJSON {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(rpcResp)
+		if err := json.NewEncoder(w).Encode(rpcResp); err != nil {
+			h.t.Errorf("encode initialize response: %v", err)
+		}
 		return
 	}
 
 	data, _ := json.Marshal(rpcResp)
 	w.Header().Set("Content-Type", "text/event-stream")
-	fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
+	if _, err := fmt.Fprintf(w, "event: message\ndata: %s\n\n", data); err != nil {
+		h.t.Errorf("write initialize response: %v", err)
+	}
 }
 
 func (h *mcpHandler) handleToolsCall(w http.ResponseWriter, r *http.Request, req map[string]any) {
@@ -149,13 +153,17 @@ func (h *mcpHandler) handleToolsCall(w http.ResponseWriter, r *http.Request, req
 
 	if h.malformedSSE {
 		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprintf(w, "data: {not-valid-json}\n\n")
+		if _, err := fmt.Fprintf(w, "data: {not-valid-json}\n\n"); err != nil {
+			h.t.Errorf("write malformed response: %v", err)
+		}
 		return
 	}
 
 	if h.noDataLine {
 		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprintf(w, "event: message\n\n")
+		if _, err := fmt.Fprintf(w, "event: message\n\n"); err != nil {
+			h.t.Errorf("write empty event: %v", err)
+		}
 		return
 	}
 
@@ -182,7 +190,9 @@ func (h *mcpHandler) handleToolsCall(w http.ResponseWriter, r *http.Request, req
 		}
 		data, _ := json.Marshal(rpcResp)
 		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
+		if _, err := fmt.Fprintf(w, "event: message\ndata: %s\n\n", data); err != nil {
+			h.t.Errorf("write tools response: %v", err)
+		}
 		return
 	}
 
@@ -204,12 +214,16 @@ func (h *mcpHandler) handleToolsCall(w http.ResponseWriter, r *http.Request, req
 
 	if h.plainJSON {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		if _, err := w.Write(data); err != nil {
+			h.t.Errorf("write tools response: %v", err)
+		}
 		return
 	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
-	fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
+	if _, err := fmt.Fprintf(w, "event: message\ndata: %s\n\n", data); err != nil {
+		h.t.Errorf("write tools response: %v", err)
+	}
 }
 
 // newMCPServer creates a test server with the stateful MCP handler.
@@ -297,7 +311,10 @@ func TestCall_SSEResponseWithJSONRPCError(t *testing.T) {
 	// Custom server that returns a JSON-RPC error for tools/call.
 	errorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
 		method, _ := req["method"].(string)
 
 		if method == "initialize" {
@@ -306,13 +323,15 @@ func TestCall_SSEResponseWithJSONRPCError(t *testing.T) {
 				"id":      req["id"],
 				"result": map[string]any{
 					"protocolVersion": "2025-03-26",
-					"capabilities":   map[string]any{},
+					"capabilities":    map[string]any{},
 				},
 			}
 			w.Header().Set("Mcp-Session-Id", "err-session")
 			data, _ := json.Marshal(rpcResp)
 			w.Header().Set("Content-Type", "text/event-stream")
-			fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
+			if _, err := fmt.Fprintf(w, "event: message\ndata: %s\n\n", data); err != nil {
+				t.Errorf("write initialize response: %v", err)
+			}
 			return
 		}
 
@@ -327,7 +346,9 @@ func TestCall_SSEResponseWithJSONRPCError(t *testing.T) {
 		}
 		data, _ := json.Marshal(rpcResp)
 		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
+		if _, err := fmt.Fprintf(w, "event: message\ndata: %s\n\n", data); err != nil {
+			t.Errorf("write tools response: %v", err)
+		}
 	}))
 	defer errorSrv.Close()
 
@@ -480,7 +501,10 @@ func TestCall_ToolsCallEnvelopeCorrectness(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
 		method, _ := req["method"].(string)
 
 		if method == "initialize" {
@@ -489,13 +513,15 @@ func TestCall_ToolsCallEnvelopeCorrectness(t *testing.T) {
 				"id":      req["id"],
 				"result": map[string]any{
 					"protocolVersion": "2025-03-26",
-					"capabilities":   map[string]any{},
+					"capabilities":    map[string]any{},
 				},
 			}
 			w.Header().Set("Mcp-Session-Id", "envelope-session")
 			data, _ := json.Marshal(rpcResp)
 			w.Header().Set("Content-Type", "text/event-stream")
-			fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
+			if _, err := fmt.Fprintf(w, "event: message\ndata: %s\n\n", data); err != nil {
+				t.Errorf("write initialize response: %v", err)
+			}
 			return
 		}
 
@@ -514,7 +540,9 @@ func TestCall_ToolsCallEnvelopeCorrectness(t *testing.T) {
 		}
 		data, _ := json.Marshal(rpcResp)
 		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
+		if _, err := fmt.Fprintf(w, "event: message\ndata: %s\n\n", data); err != nil {
+			t.Errorf("write tools response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -551,7 +579,10 @@ func TestCall_CorrectHeadersOnInitialize(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
 		method, _ := req["method"].(string)
 
 		if method == "initialize" {
@@ -566,7 +597,9 @@ func TestCall_CorrectHeadersOnInitialize(t *testing.T) {
 			data, _ := json.Marshal(rpcResp)
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.Header().Set("Mcp-Session-Id", "header-session")
-			fmt.Fprintf(w, "data: %s\n\n", data)
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+				t.Errorf("write initialize response: %v", err)
+			}
 			return
 		}
 
@@ -584,7 +617,9 @@ func TestCall_CorrectHeadersOnInitialize(t *testing.T) {
 		}
 		data, _ := json.Marshal(rpcResp)
 		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprintf(w, "data: %s\n\n", data)
+		if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+			t.Errorf("write tools response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -636,7 +671,10 @@ func TestCall_SessionRecoveryOn404(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
 		method, _ := req["method"].(string)
 
 		if method == "initialize" {
@@ -646,13 +684,15 @@ func TestCall_SessionRecoveryOn404(t *testing.T) {
 				"id":      req["id"],
 				"result": map[string]any{
 					"protocolVersion": "2025-03-26",
-					"capabilities":   map[string]any{},
+					"capabilities":    map[string]any{},
 				},
 			}
 			w.Header().Set("Mcp-Session-Id", "recovery-session")
 			data, _ := json.Marshal(rpcResp)
 			w.Header().Set("Content-Type", "text/event-stream")
-			fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
+			if _, err := fmt.Fprintf(w, "event: message\ndata: %s\n\n", data); err != nil {
+				t.Errorf("write initialize response: %v", err)
+			}
 			return
 		}
 
@@ -676,7 +716,9 @@ func TestCall_SessionRecoveryOn404(t *testing.T) {
 		}
 		data, _ := json.Marshal(rpcResp)
 		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
+		if _, err := fmt.Fprintf(w, "event: message\ndata: %s\n\n", data); err != nil {
+			t.Errorf("write tools response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -703,7 +745,10 @@ func TestCall_RetryFailure(t *testing.T) {
 	// Server that always returns 400 for tools/call.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
 		method, _ := req["method"].(string)
 
 		if method == "initialize" {
@@ -717,7 +762,9 @@ func TestCall_RetryFailure(t *testing.T) {
 			w.Header().Set("Mcp-Session-Id", "retry-session")
 			data, _ := json.Marshal(rpcResp)
 			w.Header().Set("Content-Type", "text/event-stream")
-			fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
+			if _, err := fmt.Fprintf(w, "event: message\ndata: %s\n\n", data); err != nil {
+				t.Errorf("write initialize response: %v", err)
+			}
 			return
 		}
 

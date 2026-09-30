@@ -246,7 +246,9 @@ func TestParity(t *testing.T) {
 
 	// Generate the parity report.
 	var buf bytes.Buffer
-	GenerateReport(results, &buf)
+	if err := GenerateReport(results, &buf); err != nil {
+		t.Fatalf("GenerateReport: %v", err)
+	}
 	t.Logf("\n%s", buf.String())
 }
 

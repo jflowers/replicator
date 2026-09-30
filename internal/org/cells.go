@@ -100,7 +100,7 @@ func CreateCell(store *db.Store, input CreateCellInput) (*Cell, error) {
 }
 
 // QueryCells retrieves cells matching the given filters.
-func QueryCells(store *db.Store, q CellQuery) ([]Cell, error) {
+func QueryCells(store *db.Store, q CellQuery) (cells []Cell, err error) {
 	query := "SELECT id, title, description, type, status, priority, parent_id, created_at, updated_at, closed_at, close_reason FROM beads WHERE 1=1"
 	args := []any{}
 
@@ -144,9 +144,13 @@ func QueryCells(store *db.Store, q CellQuery) ([]Cell, error) {
 	if err != nil {
 		return nil, fmt.Errorf("query cells: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			cells = nil
+			err = errors.Join(err, fmt.Errorf("close cell rows: %w", closeErr))
+		}
+	}()
 
-	var cells []Cell
 	for rows.Next() {
 		var c Cell
 		var desc, parentID, closedAt, closeReason *string
@@ -162,6 +166,9 @@ func QueryCells(store *db.Store, q CellQuery) ([]Cell, error) {
 		c.ClosedAt = closedAt
 		c.CloseReason = closeReason
 		cells = append(cells, c)
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, fmt.Errorf("iterate cells: %w", rowsErr)
 	}
 
 	if cells == nil {

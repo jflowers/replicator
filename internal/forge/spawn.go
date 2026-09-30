@@ -14,15 +14,15 @@ import (
 func SubtaskPrompt(agentName, beadID, epicID, title string, files []string, sharedContext string) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("# Subtask: %s\n\n", title))
-	sb.WriteString(fmt.Sprintf("**Agent:** %s\n", agentName))
-	sb.WriteString(fmt.Sprintf("**Cell ID:** %s\n", beadID))
-	sb.WriteString(fmt.Sprintf("**Epic ID:** %s\n\n", epicID))
+	_, _ = fmt.Fprintf(&sb, "# Subtask: %s\n\n", title)
+	_, _ = fmt.Fprintf(&sb, "**Agent:** %s\n", agentName)
+	_, _ = fmt.Fprintf(&sb, "**Cell ID:** %s\n", beadID)
+	_, _ = fmt.Fprintf(&sb, "**Epic ID:** %s\n\n", epicID)
 
 	if len(files) > 0 {
 		sb.WriteString("## Files to Modify\n\n")
 		for _, f := range files {
-			sb.WriteString(fmt.Sprintf("- `%s`\n", f))
+			_, _ = fmt.Fprintf(&sb, "- `%s`\n", f)
 		}
 		sb.WriteString("\n")
 	}
