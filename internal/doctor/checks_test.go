@@ -309,11 +309,11 @@ func TestCheckDCPConfig_PassWithProtectTags(t *testing.T) {
 		t.Fatalf("setup MkdirAll: %v", err)
 	}
 	// Create a command with <protect> tag.
-	if err := os.WriteFile(filepath.Join(cmdDir, "forge.md"), []byte("---\n---\n\n<protect>\n# /forge\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(cmdDir, "forge.md"), []byte("---\n---\n\n<protect>\n# /forge\n"), 0o600); err != nil {
 		t.Fatalf("setup WriteFile: %v", err)
 	}
 	// Create DCP config with protectTags.
-	if err := os.WriteFile(filepath.Join(dir, ".opencode", "dcp.jsonc"), []byte(`{"compress":{"protectTags":true}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".opencode", "dcp.jsonc"), []byte(`{"compress":{"protectTags":true}}`), 0o600); err != nil {
 		t.Fatalf("setup WriteFile: %v", err)
 	}
 
@@ -352,7 +352,7 @@ func TestCheckDCPConfig_PassNoProtectTags(t *testing.T) {
 		t.Fatalf("setup MkdirAll: %v", err)
 	}
 	// Command file WITHOUT <protect> tag.
-	if err := os.WriteFile(filepath.Join(cmdDir, "forge.md"), []byte("---\n---\n\n# /forge\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(cmdDir, "forge.md"), []byte("---\n---\n\n# /forge\n"), 0o600); err != nil {
 		t.Fatalf("setup WriteFile: %v", err)
 	}
 
@@ -372,7 +372,7 @@ func TestCheckDCPConfig_WarnNoDCPConfig(t *testing.T) {
 		t.Fatalf("setup MkdirAll: %v", err)
 	}
 	// Create a command with <protect> tag but NO DCP config.
-	if err := os.WriteFile(filepath.Join(cmdDir, "forge.md"), []byte("---\n---\n\n<protect>\n# /forge\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(cmdDir, "forge.md"), []byte("---\n---\n\n<protect>\n# /forge\n"), 0o600); err != nil {
 		t.Fatalf("setup WriteFile: %v", err)
 	}
 
@@ -392,11 +392,11 @@ func TestCheckDCPConfig_WarnMissingProtectTags(t *testing.T) {
 		t.Fatalf("setup MkdirAll: %v", err)
 	}
 	// Create a command with <protect> tag.
-	if err := os.WriteFile(filepath.Join(cmdDir, "forge.md"), []byte("---\n---\n\n<protect>\n# /forge\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(cmdDir, "forge.md"), []byte("---\n---\n\n<protect>\n# /forge\n"), 0o600); err != nil {
 		t.Fatalf("setup WriteFile: %v", err)
 	}
 	// Create DCP config WITHOUT protectTags.
-	if err := os.WriteFile(filepath.Join(dir, ".opencode", "dcp.jsonc"), []byte(`{"compress":{"minTokens":100}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".opencode", "dcp.jsonc"), []byte(`{"compress":{"minTokens":100}}`), 0o600); err != nil {
 		t.Fatalf("setup WriteFile: %v", err)
 	}
 
@@ -416,11 +416,11 @@ func TestCheckDCPConfig_PassWithJSONAlias(t *testing.T) {
 		t.Fatalf("setup MkdirAll: %v", err)
 	}
 	// Create a command with <protect> tag.
-	if err := os.WriteFile(filepath.Join(cmdDir, "forge.md"), []byte("---\n---\n\n<protect>\n# /forge\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(cmdDir, "forge.md"), []byte("---\n---\n\n<protect>\n# /forge\n"), 0o600); err != nil {
 		t.Fatalf("setup WriteFile: %v", err)
 	}
 	// Create DCP config as .dcp.json (not .jsonc) with protectTags.
-	if err := os.WriteFile(filepath.Join(dir, ".opencode", "dcp.json"), []byte(`{"compress":{"protectTags":true}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".opencode", "dcp.json"), []byte(`{"compress":{"protectTags":true}}`), 0o600); err != nil {
 		t.Fatalf("setup WriteFile: %v", err)
 	}
 
@@ -443,7 +443,7 @@ func TestCheckDCPConfig_WarnUnreadableCommandFile(t *testing.T) {
 		t.Fatalf("setup MkdirAll: %v", err)
 	}
 	// Create DCP config with protectTags so we reach the command scan.
-	if err := os.WriteFile(filepath.Join(dir, ".opencode", "dcp.jsonc"), []byte(`{"compress":{"protectTags":true}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".opencode", "dcp.jsonc"), []byte(`{"compress":{"protectTags":true}}`), 0o600); err != nil {
 		t.Fatalf("setup WriteFile dcp: %v", err)
 	}
 	// Create an unreadable command file.

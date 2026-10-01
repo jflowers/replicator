@@ -75,7 +75,7 @@ func TestSetupLogger_Truncates(t *testing.T) {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 	logPath := filepath.Join(logDir, "replicator.log")
-	if err := os.WriteFile(logPath, []byte("MARKER_SHOULD_BE_GONE"), 0o644); err != nil {
+	if err := os.WriteFile(logPath, []byte("MARKER_SHOULD_BE_GONE"), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 

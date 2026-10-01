@@ -29,7 +29,7 @@ func initRepo(t *testing.T) string {
 
 	// Create an initial commit so HEAD exists.
 	f := filepath.Join(dir, "README.md")
-	if err := os.WriteFile(f, []byte("# test\n"), 0o644); err != nil {
+	if err := os.WriteFile(f, []byte("# test\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	run("add", ".")
@@ -153,7 +153,7 @@ func TestCherryPick(t *testing.T) {
 
 	// Make a commit in the worktree.
 	f := filepath.Join(wtPath, "new-file.txt")
-	if err := os.WriteFile(f, []byte("cherry content\n"), 0o644); err != nil {
+	if err := os.WriteFile(f, []byte("cherry content\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	if _, err := Run(wtPath, "add", "."); err != nil {

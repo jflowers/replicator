@@ -30,7 +30,7 @@ func initRepo(t *testing.T) string {
 	run("config", "user.name", "Test")
 
 	f := filepath.Join(dir, "README.md")
-	if err := os.WriteFile(f, []byte("# test\n"), 0o644); err != nil {
+	if err := os.WriteFile(f, []byte("# test\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	run("add", ".")
@@ -89,7 +89,7 @@ func TestWorktreeMerge(t *testing.T) {
 	wtPath := filepath.Join(repo, ".worktrees", "merge-task")
 
 	f := filepath.Join(wtPath, "new.txt")
-	if err := os.WriteFile(f, []byte("merge content\n"), 0o644); err != nil {
+	if err := os.WriteFile(f, []byte("merge content\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	if _, err := gitutil.Run(wtPath, "add", "."); err != nil {

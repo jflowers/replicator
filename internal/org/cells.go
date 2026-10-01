@@ -214,6 +214,7 @@ func UpdateCell(store *db.Store, id string, status *string, description *string,
 	}
 
 	args = append(args, id)
+	// #nosec G201 -- sets contains only fixed column assignments selected above.
 	query := fmt.Sprintf("UPDATE beads SET %s WHERE id = ?", joinStrings(sets, ", "))
 
 	result, err := store.DB.Exec(query, args...)

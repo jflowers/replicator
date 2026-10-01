@@ -49,6 +49,7 @@ func runInit(targetDir string, force bool) error {
 		if err := os.MkdirAll(replicatorDir, 0o755); err != nil {
 			return fmt.Errorf("create .uf/replicator directory: %w", err)
 		}
+		// #nosec G306 -- cells.json is repository state intended for collaborator access.
 		if err := os.WriteFile(cellsPath, []byte("[]\n"), 0o644); err != nil {
 			return fmt.Errorf("write cells.json: %w", err)
 		}
