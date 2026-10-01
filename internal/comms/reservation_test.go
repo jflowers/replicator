@@ -1,6 +1,12 @@
 package comms
 
-import "testing"
+import (
+	"database/sql"
+	"errors"
+	"reflect"
+	"strings"
+	"testing"
+)
 
 func TestReserve(t *testing.T) {
 	store := testStore(t)
@@ -87,7 +93,9 @@ func TestReserve_NonExclusiveNoConflict(t *testing.T) {
 func TestRelease_ByPath(t *testing.T) {
 	store := testStore(t)
 
-	Reserve(store, "worker-1", []string{"foo.go"}, true, "test", 300)
+	if _, err := Reserve(store, "worker-1", []string{"foo.go"}, true, "test", 300); err != nil {
+		t.Fatalf("Reserve: %v", err)
+	}
 
 	if err := Release(store, []string{"foo.go"}, nil); err != nil {
 		t.Fatalf("Release: %v", err)
@@ -128,8 +136,12 @@ func TestRelease_NothingSpecified(t *testing.T) {
 func TestReleaseAll(t *testing.T) {
 	store := testStore(t)
 
-	Reserve(store, "worker-1", []string{"a.go"}, true, "test", 300)
-	Reserve(store, "worker-2", []string{"b.go"}, true, "test", 300)
+	if _, err := Reserve(store, "worker-1", []string{"a.go"}, true, "test", 300); err != nil {
+		t.Fatalf("Reserve worker-1: %v", err)
+	}
+	if _, err := Reserve(store, "worker-2", []string{"b.go"}, true, "test", 300); err != nil {
+		t.Fatalf("Reserve worker-2: %v", err)
+	}
 
 	if err := ReleaseAll(store, ""); err != nil {
 		t.Fatalf("ReleaseAll: %v", err)
@@ -145,8 +157,12 @@ func TestReleaseAll(t *testing.T) {
 func TestReleaseAgent(t *testing.T) {
 	store := testStore(t)
 
-	Reserve(store, "worker-1", []string{"a.go", "b.go"}, true, "test", 300)
-	Reserve(store, "worker-2", []string{"c.go"}, true, "test", 300)
+	if _, err := Reserve(store, "worker-1", []string{"a.go", "b.go"}, true, "test", 300); err != nil {
+		t.Fatalf("Reserve worker-1: %v", err)
+	}
+	if _, err := Reserve(store, "worker-2", []string{"c.go"}, true, "test", 300); err != nil {
+		t.Fatalf("Reserve worker-2: %v", err)
+	}
 
 	if err := ReleaseAgent(store, "worker-1"); err != nil {
 		t.Fatalf("ReleaseAgent: %v", err)
@@ -162,5 +178,75 @@ func TestReleaseAgent(t *testing.T) {
 	_, err = Reserve(store, "worker-3", []string{"c.go"}, true, "conflict", 300)
 	if err == nil {
 		t.Error("expected conflict -- worker-2's reservation should still exist")
+	}
+}
+
+func TestRunReservationTransaction_FinalizesExactlyOnce(t *testing.T) {
+	errWork := errors.New("work sentinel")
+	errCommit := errors.New("commit sentinel")
+	errRollback := errors.New("rollback sentinel")
+
+	for _, test := range []struct {
+		name        string
+		workErr     error
+		commitErr   error
+		rollbackErr error
+		wantOrder   []string
+		want        []error
+	}{
+		{name: "success", rollbackErr: sql.ErrTxDone, wantOrder: []string{"work", "commit", "rollback"}},
+		{name: "work", workErr: errWork, wantOrder: []string{"work", "rollback"}, want: []error{errWork}},
+		{name: "work and rollback", workErr: errWork, rollbackErr: errRollback, wantOrder: []string{"work", "rollback"}, want: []error{errWork, errRollback}},
+		{name: "commit", commitErr: errCommit, wantOrder: []string{"work", "commit", "rollback"}, want: []error{errCommit}},
+		{name: "commit and rollback", commitErr: errCommit, rollbackErr: errRollback, wantOrder: []string{"work", "commit", "rollback"}, want: []error{errCommit, errRollback}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var order []string
+			err := runReservationTransaction(
+				func() error { order = append(order, "work"); return test.workErr },
+				func() error { order = append(order, "commit"); return test.commitErr },
+				func() error { order = append(order, "rollback"); return test.rollbackErr },
+			)
+			if !reflect.DeepEqual(order, test.wantOrder) {
+				t.Errorf("order = %v, want %v", order, test.wantOrder)
+			}
+			for _, want := range test.want {
+				if !errors.Is(err, want) {
+					t.Errorf("error %v does not preserve %v", err, want)
+				}
+			}
+			if len(test.want) == 0 && err != nil {
+				t.Errorf("runReservationTransaction: %v", err)
+			}
+		})
+	}
+}
+
+func TestReserve_RollsBackPartialInserts(t *testing.T) {
+	store := testStore(t)
+	if _, err := store.DB.Exec(`
+		CREATE TRIGGER fail_second_reservation
+		BEFORE INSERT ON reservations
+		WHEN NEW.path = 'fail.go'
+		BEGIN
+			SELECT RAISE(ABORT, 'reservation sentinel');
+		END`); err != nil {
+		t.Fatalf("create failure trigger: %v", err)
+	}
+
+	reservations, err := Reserve(store, "worker-1", []string{"first.go", "fail.go"}, true, "test rollback", 300)
+	if err == nil || !strings.Contains(err.Error(), "insert reservation") {
+		t.Fatalf("Reserve error = %v, want contextual insert failure", err)
+	}
+	if reservations != nil {
+		t.Errorf("reservations = %#v, want nil", reservations)
+	}
+
+	var count int
+	if err := store.DB.QueryRow("SELECT COUNT(*) FROM reservations").Scan(&count); err != nil {
+		t.Fatalf("count reservations: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("persisted reservations = %d, want 0 after rollback", count)
 	}
 }

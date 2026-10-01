@@ -21,6 +21,7 @@ func TestSync(t *testing.T) {
 		{"git", "commit", "--allow-empty", "-m", "init"},
 	}
 	for _, args := range cmds {
+		// #nosec G204 -- command and arguments are fixed test fixtures.
 		cmd := exec.Command(args[0], args[1:]...)
 		cmd.Dir = dir
 		if out, err := cmd.CombinedOutput(); err != nil {
@@ -29,8 +30,12 @@ func TestSync(t *testing.T) {
 	}
 
 	// Create some cells.
-	CreateCell(store, CreateCellInput{Title: "Task A"})
-	CreateCell(store, CreateCellInput{Title: "Task B", Type: "bug"})
+	if _, err := CreateCell(store, CreateCellInput{Title: "Task A"}); err != nil {
+		t.Fatalf("CreateCell: %v", err)
+	}
+	if _, err := CreateCell(store, CreateCellInput{Title: "Task B", Type: "bug"}); err != nil {
+		t.Fatalf("CreateCell: %v", err)
+	}
 
 	// Run sync.
 	if err := Sync(store, dir); err != nil {
@@ -76,6 +81,7 @@ func TestSync_CreatesHiveDir(t *testing.T) {
 		{"git", "commit", "--allow-empty", "-m", "init"},
 	}
 	for _, args := range cmds {
+		// #nosec G204 -- command and arguments are fixed test fixtures.
 		cmd := exec.Command(args[0], args[1:]...)
 		cmd.Dir = dir
 		if out, err := cmd.CombinedOutput(); err != nil {

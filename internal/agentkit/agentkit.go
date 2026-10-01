@@ -69,6 +69,7 @@ func ScaffoldDCP(targetDir string) (ScaffoldResult, error) {
 		}
 
 		// File exists but lacks protectTags — replace with canonical content (D10).
+		// #nosec G306 -- the DCP configuration contains no secrets and is user-readable.
 		if err := os.WriteFile(existingPath, []byte(dcpConfigContent), 0o644); err != nil {
 			return ScaffoldResult{}, fmt.Errorf("write %s: %w", fileName, err)
 		}
@@ -79,6 +80,7 @@ func ScaffoldDCP(targetDir string) (ScaffoldResult, error) {
 	if err := os.MkdirAll(openCodeDir, 0o755); err != nil {
 		return ScaffoldResult{}, fmt.Errorf("create .opencode directory: %w", err)
 	}
+	// #nosec G306 -- the DCP configuration contains no secrets and is user-readable.
 	if err := os.WriteFile(jsoncPath, []byte(dcpConfigContent), 0o644); err != nil {
 		return ScaffoldResult{}, fmt.Errorf("write dcp.jsonc: %w", err)
 	}
@@ -127,6 +129,7 @@ func Scaffold(targetDir string, force bool) ([]ScaffoldResult, error) {
 			return fmt.Errorf("read embedded %s: %w", path, readErr)
 		}
 
+		// #nosec G306 -- scaffolded agent-kit assets are intentionally user-readable.
 		if writeErr := os.WriteFile(destPath, data, 0o644); writeErr != nil {
 			return fmt.Errorf("write %s: %w", relPath, writeErr)
 		}

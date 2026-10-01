@@ -76,10 +76,12 @@ func TestCompleteSubtask(t *testing.T) {
 	store := testStore(t)
 
 	// Create a cell to complete.
-	store.DB.Exec(
+	if _, err := store.DB.Exec(
 		"INSERT INTO beads (id, title, type, status) VALUES (?, ?, ?, ?)",
 		"cell-test", "Test task", "task", "in_progress",
-	)
+	); err != nil {
+		t.Fatalf("insert cell: %v", err)
+	}
 
 	result, err := CompleteSubtask(store, "cell-test", "All done", []string{"a.go"})
 	if err != nil {
@@ -91,7 +93,9 @@ func TestCompleteSubtask(t *testing.T) {
 
 	// Verify event was recorded.
 	var count int
-	store.DB.QueryRow("SELECT COUNT(*) FROM events WHERE type = 'subtask_complete'").Scan(&count)
+	if err := store.DB.QueryRow("SELECT COUNT(*) FROM events WHERE type = 'subtask_complete'").Scan(&count); err != nil {
+		t.Fatalf("scan completion count: %v", err)
+	}
 	if count != 1 {
 		t.Errorf("expected 1 subtask_complete event, got %d", count)
 	}

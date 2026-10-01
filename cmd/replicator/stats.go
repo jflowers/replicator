@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -10,12 +11,16 @@ import (
 )
 
 // runStats queries the database and prints statistics.
-func runStats(cfg *config.Config) error {
+func runStats(cfg *config.Config) (err error) {
 	store, err := db.Open(cfg.DatabasePath)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
-	defer store.Close()
+	defer func() {
+		if closeErr := store.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close database: %w", closeErr))
+		}
+	}()
 
 	return stats.Run(store, os.Stdout)
 }

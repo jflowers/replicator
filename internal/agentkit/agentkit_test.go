@@ -85,7 +85,7 @@ func TestScaffold_SkipsExisting(t *testing.T) {
 		t.Fatalf("setup MkdirAll: %v", err)
 	}
 	original := []byte("# custom content\n")
-	if err := os.WriteFile(forgePath, original, 0o644); err != nil {
+	if err := os.WriteFile(forgePath, original, 0o600); err != nil {
 		t.Fatalf("setup WriteFile: %v", err)
 	}
 
@@ -127,7 +127,7 @@ func TestScaffold_ForceOverwrites(t *testing.T) {
 		t.Fatalf("setup MkdirAll: %v", err)
 	}
 	original := []byte("# custom content\n")
-	if err := os.WriteFile(forgePath, original, 0o644); err != nil {
+	if err := os.WriteFile(forgePath, original, 0o600); err != nil {
 		t.Fatalf("setup WriteFile: %v", err)
 	}
 
@@ -528,7 +528,6 @@ func TestWorkerPrompt_HardenedStructure(t *testing.T) {
 		t.Errorf("comms_reserve step window lacks STOP instruction for reservation failure:\n%s", reserveWindow)
 	}
 }
-
 
 func TestForgeMD_StructuralHardening(t *testing.T) {
 	// Read forge.md from embedded content.
@@ -1076,8 +1075,6 @@ func TestSkillFiles_DriftDetection(t *testing.T) {
 	}
 }
 
-
-
 func TestScaffoldDCP_FreshDirectory(t *testing.T) {
 	dir := t.TempDir()
 	result, err := ScaffoldDCP(dir)
@@ -1112,7 +1109,7 @@ func TestScaffoldDCP_ExistingWithProtectTags(t *testing.T) {
 		t.Fatalf("setup MkdirAll: %v", err)
 	}
 	existing := []byte(`{"compress":{"protectTags":true}}`)
-	if err := os.WriteFile(filepath.Join(dcpDir, "dcp.jsonc"), existing, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dcpDir, "dcp.jsonc"), existing, 0o600); err != nil {
 		t.Fatalf("setup WriteFile: %v", err)
 	}
 
@@ -1141,7 +1138,7 @@ func TestScaffoldDCP_ExistingWithoutProtectTags(t *testing.T) {
 	if err := os.MkdirAll(dcpDir, 0o755); err != nil {
 		t.Fatalf("setup MkdirAll: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dcpDir, "dcp.jsonc"), []byte(`{"compress":{"minTokens":100}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dcpDir, "dcp.jsonc"), []byte(`{"compress":{"minTokens":100}}`), 0o600); err != nil {
 		t.Fatalf("setup WriteFile: %v", err)
 	}
 
@@ -1174,7 +1171,7 @@ func TestScaffoldDCP_JSONAlias(t *testing.T) {
 		t.Fatalf("setup MkdirAll: %v", err)
 	}
 	// Only .dcp.json exists (no .jsonc).
-	if err := os.WriteFile(filepath.Join(dcpDir, "dcp.json"), []byte(`{"compress":{"minTokens":100}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dcpDir, "dcp.json"), []byte(`{"compress":{"minTokens":100}}`), 0o600); err != nil {
 		t.Fatalf("setup WriteFile: %v", err)
 	}
 
@@ -1215,10 +1212,10 @@ func TestScaffoldDCP_BothFilesExist(t *testing.T) {
 		t.Fatalf("setup MkdirAll: %v", err)
 	}
 	// Both exist — .jsonc should be preferred.
-	if err := os.WriteFile(filepath.Join(dcpDir, "dcp.jsonc"), []byte(`{"compress":{"protectTags":true}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dcpDir, "dcp.jsonc"), []byte(`{"compress":{"protectTags":true}}`), 0o600); err != nil {
 		t.Fatalf("setup WriteFile: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dcpDir, "dcp.json"), []byte(`{"compress":{"minTokens":100}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dcpDir, "dcp.json"), []byte(`{"compress":{"minTokens":100}}`), 0o600); err != nil {
 		t.Fatalf("setup WriteFile: %v", err)
 	}
 

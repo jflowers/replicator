@@ -35,7 +35,9 @@ func runSetup() error {
 	if err != nil {
 		return fmt.Errorf("initialize database: %w", err)
 	}
-	store.Close()
+	if err := store.Close(); err != nil {
+		return fmt.Errorf("close database: %w", err)
+	}
 	fmt.Printf("%s Database: %s\n", styles.Pass.Render("✓"), cfg.DatabasePath)
 
 	// 3. Verify git.

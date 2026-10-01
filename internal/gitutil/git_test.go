@@ -29,7 +29,7 @@ func initRepo(t *testing.T) string {
 
 	// Create an initial commit so HEAD exists.
 	f := filepath.Join(dir, "README.md")
-	if err := os.WriteFile(f, []byte("# test\n"), 0o644); err != nil {
+	if err := os.WriteFile(f, []byte("# test\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	run("add", ".")
@@ -125,7 +125,9 @@ func TestWorktreeRemove(t *testing.T) {
 	commit, _ := CurrentCommit(repo)
 	wtPath := filepath.Join(t.TempDir(), "wt-remove")
 
-	WorktreeAdd(repo, wtPath, "remove-branch", commit)
+	if err := WorktreeAdd(repo, wtPath, "remove-branch", commit); err != nil {
+		t.Fatalf("WorktreeAdd: %v", err)
+	}
 
 	err := WorktreeRemove(repo, wtPath)
 	if err != nil {
@@ -145,13 +147,21 @@ func TestCherryPick(t *testing.T) {
 
 	// Create a worktree and make a commit in it.
 	wtPath := filepath.Join(t.TempDir(), "wt-cherry")
-	WorktreeAdd(repo, wtPath, "cherry-branch", startCommit)
+	if err := WorktreeAdd(repo, wtPath, "cherry-branch", startCommit); err != nil {
+		t.Fatalf("WorktreeAdd: %v", err)
+	}
 
 	// Make a commit in the worktree.
 	f := filepath.Join(wtPath, "new-file.txt")
-	os.WriteFile(f, []byte("cherry content\n"), 0o644)
-	Run(wtPath, "add", ".")
-	Run(wtPath, "commit", "-m", "cherry commit")
+	if err := os.WriteFile(f, []byte("cherry content\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if _, err := Run(wtPath, "add", "."); err != nil {
+		t.Fatalf("git add: %v", err)
+	}
+	if _, err := Run(wtPath, "commit", "-m", "cherry commit"); err != nil {
+		t.Fatalf("git commit: %v", err)
+	}
 
 	// Cherry-pick from worktree branch back to main.
 	err := CherryPick(repo, "cherry-branch", startCommit)
@@ -173,7 +183,9 @@ func TestCherryPick_NoCommits(t *testing.T) {
 
 	// Create a worktree with no new commits.
 	wtPath := filepath.Join(t.TempDir(), "wt-empty")
-	WorktreeAdd(repo, wtPath, "empty-branch", startCommit)
+	if err := WorktreeAdd(repo, wtPath, "empty-branch", startCommit); err != nil {
+		t.Fatalf("WorktreeAdd: %v", err)
+	}
 
 	// Cherry-pick should succeed with no-op.
 	err := CherryPick(repo, "empty-branch", startCommit)

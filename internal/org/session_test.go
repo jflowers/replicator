@@ -28,7 +28,9 @@ func TestSessionStart_WithActiveCellID(t *testing.T) {
 
 	// Verify session was created.
 	var count int
-	store.DB.QueryRow("SELECT COUNT(*) FROM sessions").Scan(&count)
+	if err := store.DB.QueryRow("SELECT COUNT(*) FROM sessions").Scan(&count); err != nil {
+		t.Fatalf("scan session count: %v", err)
+	}
 	if count != 1 {
 		t.Errorf("expected 1 session, got %d", count)
 	}
@@ -77,8 +79,12 @@ func TestSessionHandoff(t *testing.T) {
 	store := testStore(t)
 
 	// Start and end a session with handoff notes.
-	SessionStart(store, "")
-	SessionEnd(store, "Continue with task 5")
+	if _, err := SessionStart(store, ""); err != nil {
+		t.Fatalf("SessionStart: %v", err)
+	}
+	if err := SessionEnd(store, "Continue with task 5"); err != nil {
+		t.Fatalf("SessionEnd: %v", err)
+	}
 
 	// Start a new session -- should get previous handoff notes.
 	notes, err := SessionStart(store, "")
@@ -94,12 +100,20 @@ func TestSessionMultipleHandoffs(t *testing.T) {
 	store := testStore(t)
 
 	// Session 1.
-	SessionStart(store, "")
-	SessionEnd(store, "First handoff")
+	if _, err := SessionStart(store, ""); err != nil {
+		t.Fatalf("SessionStart: %v", err)
+	}
+	if err := SessionEnd(store, "First handoff"); err != nil {
+		t.Fatalf("SessionEnd: %v", err)
+	}
 
 	// Session 2.
-	SessionStart(store, "")
-	SessionEnd(store, "Second handoff")
+	if _, err := SessionStart(store, ""); err != nil {
+		t.Fatalf("SessionStart: %v", err)
+	}
+	if err := SessionEnd(store, "Second handoff"); err != nil {
+		t.Fatalf("SessionEnd: %v", err)
+	}
 
 	// Session 3 should get the most recent handoff.
 	notes, err := SessionStart(store, "")

@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sync/atomic"
 	"time"
 
 	"github.com/unbound-force/replicator/internal/tools/registry"
@@ -31,7 +30,6 @@ type Server struct {
 	registry *registry.Registry
 	version  string
 	logger   Logger
-	nextID   atomic.Int64
 }
 
 // NewServer creates an MCP server backed by the given tool registry.
@@ -108,12 +106,16 @@ func (s *Server) Serve(r io.Reader, w io.Writer) error {
 
 		var req jsonrpcRequest
 		if err := json.Unmarshal(line, &req); err != nil {
-			s.writeError(w, nil, -32700, "Parse error")
+			if err := s.writeError(w, nil, -32700, "Parse error"); err != nil {
+				return err
+			}
 			continue
 		}
 
 		resp := s.handleRequest(&req)
-		s.writeResponse(w, resp)
+		if err := s.writeResponse(w, resp); err != nil {
+			return err
+		}
 	}
 
 	return scanner.Err()
@@ -220,16 +222,19 @@ func (s *Server) handleToolsCall(req *jsonrpcRequest) *jsonrpcResponse {
 	}
 }
 
-func (s *Server) writeResponse(w io.Writer, resp *jsonrpcResponse) {
+func (s *Server) writeResponse(w io.Writer, resp *jsonrpcResponse) error {
 	data, _ := json.Marshal(resp)
-	fmt.Fprintf(w, "%s\n", data)
+	if _, err := fmt.Fprintf(w, "%s\n", data); err != nil {
+		return fmt.Errorf("write JSON-RPC response: %w", err)
+	}
+	return nil
 }
 
-func (s *Server) writeError(w io.Writer, id json.RawMessage, code int, msg string) {
+func (s *Server) writeError(w io.Writer, id json.RawMessage, code int, msg string) error {
 	resp := &jsonrpcResponse{
 		JSONRPC: "2.0",
 		ID:      id,
 		Error:   &jsonrpcError{Code: code, Message: msg},
 	}
-	s.writeResponse(w, resp)
+	return s.writeResponse(w, resp)
 }

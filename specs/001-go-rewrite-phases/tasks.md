@@ -206,7 +206,7 @@
 
 - [x] T076 [US6] Create `test/parity/fixtures/` directory structure — one JSON file per tool family: `hive.json`, `swarmmail.json`, `swarm.json`, `memory.json`. Each file contains `{toolName: {request: {...}, typescript_response: {...}}}` captured from the TypeScript cyborg-swarm server.
 - [x] T077 [US6] Create `test/parity/parity_test.go` — build tag `//go:build parity`. Iterate over fixture files, for each tool: start Go MCP server in-process, send fixture request, compare response shape against TypeScript fixture using `ShapeMatch()`. Report pass/fail per tool.
-- [x] T078 [US6] Implement parity report generation in `test/parity/report.go` — `GenerateReport(results []ToolResult, w io.Writer)`. Output table: tool name, status (✓/✗), differences (if any). Summary line: `X/Y tools match (Z%)`.
+- [x] T078 [US6] Implement parity report generation in `test/parity/report.go` — `GenerateReport(results []ToolResult, w io.Writer) error`. Output table: tool name, status (✓/✗), differences (if any). Summary line: `X/Y tools match (Z%)`.
 
 ### 5C — Phase 5 Checkpoint
 

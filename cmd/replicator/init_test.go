@@ -81,7 +81,7 @@ func TestRunInit_AgentKitSkipsExisting(t *testing.T) {
 		t.Fatalf("setup MkdirAll: %v", err)
 	}
 	original := []byte("# my custom forge\n")
-	if err := os.WriteFile(forgePath, original, 0o644); err != nil {
+	if err := os.WriteFile(forgePath, original, 0o600); err != nil {
 		t.Fatalf("setup WriteFile: %v", err)
 	}
 
@@ -114,7 +114,7 @@ func TestRunInit_ForceOverwrites(t *testing.T) {
 		t.Fatalf("setup MkdirAll: %v", err)
 	}
 	original := []byte("# my custom forge\n")
-	if err := os.WriteFile(forgePath, original, 0o644); err != nil {
+	if err := os.WriteFile(forgePath, original, 0o600); err != nil {
 		t.Fatalf("setup WriteFile: %v", err)
 	}
 
@@ -142,7 +142,7 @@ func TestRunInit_AlreadyInitialized(t *testing.T) {
 
 	// Write something to cells.json to verify it's not overwritten.
 	cellsPath := filepath.Join(dir, ".uf", "replicator", "cells.json")
-	if err := os.WriteFile(cellsPath, []byte(`[{"id":"test"}]`), 0o644); err != nil {
+	if err := os.WriteFile(cellsPath, []byte(`[{"id":"test"}]`), 0o600); err != nil {
 		t.Fatalf("setup WriteFile: %v", err)
 	}
 

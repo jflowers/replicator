@@ -2,6 +2,7 @@ package forge
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -88,7 +89,7 @@ func Complete(store *db.Store, projectKey, agentName, beadID, summary string, fi
 }
 
 // Status aggregates subtask statuses for an epic from events.
-func Status(store *db.Store, epicID, projectKey string) (map[string]any, error) {
+func Status(store *db.Store, epicID, projectKey string) (result map[string]any, err error) {
 	if epicID == "" {
 		return nil, fmt.Errorf("epic_id is required")
 	}
@@ -100,7 +101,12 @@ func Status(store *db.Store, epicID, projectKey string) (map[string]any, error) 
 	if err != nil {
 		return nil, fmt.Errorf("query subtasks: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			result = nil
+			err = errors.Join(err, fmt.Errorf("close subtask rows: %w", closeErr))
+		}
+	}()
 
 	var subtasks []map[string]string
 	counts := map[string]int{
@@ -121,6 +127,9 @@ func Status(store *db.Store, epicID, projectKey string) (map[string]any, error) 
 			"status": status,
 		})
 		counts[status]++
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, fmt.Errorf("iterate subtasks: %w", rowsErr)
 	}
 
 	total := len(subtasks)

@@ -51,7 +51,7 @@ func (h *mcpMockHandler) handleInitialize(w http.ResponseWriter, req map[string]
 
 	result := map[string]any{
 		"protocolVersion": "2025-03-26",
-		"capabilities":   map[string]any{},
+		"capabilities":    map[string]any{},
 		"serverInfo": map[string]any{
 			"name":    "mock-dewey",
 			"version": "1.0.0",
@@ -67,7 +67,9 @@ func (h *mcpMockHandler) handleInitialize(w http.ResponseWriter, req map[string]
 	w.Header().Set("Mcp-Session-Id", "mock-session-id")
 	data, _ := json.Marshal(rpcResp)
 	w.Header().Set("Content-Type", "text/event-stream")
-	fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
+	if _, err := fmt.Fprintf(w, "event: message\ndata: %s\n\n", data); err != nil {
+		h.t.Errorf("write initialize response: %v", err)
+	}
 }
 
 func (h *mcpMockHandler) handleToolsCall(w http.ResponseWriter, req map[string]any) {
@@ -90,7 +92,9 @@ func (h *mcpMockHandler) handleToolsCall(w http.ResponseWriter, req map[string]a
 			}
 			data, _ := json.Marshal(rpcResp)
 			w.Header().Set("Content-Type", "text/event-stream")
-			fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
+			if _, err := fmt.Fprintf(w, "event: message\ndata: %s\n\n", data); err != nil {
+				h.t.Errorf("write error response: %v", err)
+			}
 			return
 		}
 	} else {
@@ -110,7 +114,9 @@ func (h *mcpMockHandler) handleToolsCall(w http.ResponseWriter, req map[string]a
 
 	data, _ := json.Marshal(rpcResp)
 	w.Header().Set("Content-Type", "text/event-stream")
-	fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
+	if _, err := fmt.Fprintf(w, "event: message\ndata: %s\n\n", data); err != nil {
+		h.t.Errorf("write tools response: %v", err)
+	}
 }
 
 // newMCPTestServer creates a test server with the MCP mock handler.
@@ -218,7 +224,9 @@ func TestStore_Success(t *testing.T) {
 		}
 
 		var p map[string]string
-		json.Unmarshal(args, &p)
+		if err := json.Unmarshal(args, &p); err != nil {
+			t.Fatalf("unmarshal arguments: %v", err)
+		}
 		if p["information"] != "test learning" {
 			t.Errorf("information = %q, want %q", p["information"], "test learning")
 		}
@@ -259,7 +267,9 @@ func TestStore_NoTags(t *testing.T) {
 	}
 
 	var params map[string]any
-	json.Unmarshal(receivedArgs, &params)
+	if err := json.Unmarshal(receivedArgs, &params); err != nil {
+		t.Fatalf("unmarshal arguments: %v", err)
+	}
 	if _, hasTags := params["tags"]; hasTags {
 		t.Error("tags should not be sent when empty")
 	}
@@ -285,7 +295,9 @@ func TestFind_Success(t *testing.T) {
 		}
 
 		var p map[string]any
-		json.Unmarshal(args, &p)
+		if err := json.Unmarshal(args, &p); err != nil {
+			t.Fatalf("unmarshal arguments: %v", err)
+		}
 		if p["query"] != "test query" {
 			t.Errorf("query = %v, want %q", p["query"], "test query")
 		}
@@ -323,7 +335,9 @@ func TestFind_WithCollection(t *testing.T) {
 	}
 
 	var params map[string]any
-	json.Unmarshal(receivedArgs, &params)
+	if err := json.Unmarshal(receivedArgs, &params); err != nil {
+		t.Fatalf("unmarshal arguments: %v", err)
+	}
 	if params["source_type"] != "learnings" {
 		t.Errorf("source_type = %v, want %q", params["source_type"], "learnings")
 	}
@@ -344,7 +358,9 @@ func TestFind_WithLimit(t *testing.T) {
 	}
 
 	var params map[string]any
-	json.Unmarshal(receivedArgs, &params)
+	if err := json.Unmarshal(receivedArgs, &params); err != nil {
+		t.Fatalf("unmarshal arguments: %v", err)
+	}
 	// JSON numbers unmarshal as float64.
 	if params["limit"] != float64(7) {
 		t.Errorf("limit = %v, want 7", params["limit"])
@@ -366,7 +382,9 @@ func TestFind_ZeroLimit(t *testing.T) {
 	}
 
 	var params map[string]any
-	json.Unmarshal(receivedArgs, &params)
+	if err := json.Unmarshal(receivedArgs, &params); err != nil {
+		t.Fatalf("unmarshal arguments: %v", err)
+	}
 	if _, hasLimit := params["limit"]; hasLimit {
 		t.Error("limit should not be sent when zero")
 	}
@@ -415,7 +433,11 @@ func TestCall_RejectsBareMethods(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bare request: %v", err)
 	}
-	defer resp.Body.Close()
+	t.Cleanup(func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Errorf("close response body: %v", err)
+		}
+	})
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("bare method should be rejected with 400, got %d", resp.StatusCode)

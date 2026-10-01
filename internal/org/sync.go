@@ -31,6 +31,7 @@ func Sync(store *db.Store, projectPath string) error {
 	}
 
 	cellsPath := filepath.Join(hiveDir, "cells.json")
+	// #nosec G306 -- cells.json is repository state intended for collaborator access.
 	if err := os.WriteFile(cellsPath, data, 0o644); err != nil {
 		return fmt.Errorf("write cells.json: %w", err)
 	}

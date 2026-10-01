@@ -1,7 +1,9 @@
 package forge
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/unbound-force/replicator/internal/gitutil"
@@ -61,6 +63,18 @@ func WorktreeMerge(projectPath, taskID, startCommit string) (map[string]any, err
 // WorktreeCleanup removes a worktree. If cleanupAll is true, removes all
 // worktrees in the .worktrees directory. Idempotent -- safe to call multiple times.
 func WorktreeCleanup(projectPath string, taskID string, cleanupAll bool) (map[string]any, error) {
+	return worktreeCleanupWithRemover(projectPath, taskID, cleanupAll, gitutil.WorktreeRemove)
+}
+
+type worktreeRemovalError struct {
+	cause error
+}
+
+func (e *worktreeRemovalError) Error() string { return "remove worktree" }
+
+func (e *worktreeRemovalError) Unwrap() error { return e.cause }
+
+func worktreeCleanupWithRemover(projectPath string, taskID string, cleanupAll bool, remove func(string, string) error) (map[string]any, error) {
 	if projectPath == "" {
 		return nil, fmt.Errorf("project_path is required")
 	}
@@ -77,7 +91,7 @@ func WorktreeCleanup(projectPath string, taskID string, cleanupAll bool) (map[st
 			// Only remove worktrees under .worktrees/.
 			if len(wt.Path) > len(worktreeDir) && wt.Path[:len(worktreeDir)] == worktreeDir {
 				// Ignore errors for idempotency.
-				if err := gitutil.WorktreeRemove(projectPath, wt.Path); err == nil {
+				if err := remove(projectPath, wt.Path); err == nil {
 					removed++
 				}
 			}
@@ -94,8 +108,13 @@ func WorktreeCleanup(projectPath string, taskID string, cleanupAll bool) (map[st
 	}
 
 	worktreePath := filepath.Join(projectPath, ".worktrees", taskID)
-	// Idempotent: ignore errors if worktree doesn't exist.
-	gitutil.WorktreeRemove(projectPath, worktreePath)
+	if _, err := os.Stat(worktreePath); errors.Is(err, os.ErrNotExist) {
+		return map[string]any{"status": "cleaned", "task_id": taskID}, nil
+	}
+	if err := remove(projectPath, worktreePath); err != nil {
+		// Preserve sentinel matching without exposing Git output or absolute paths at the MCP boundary.
+		return nil, &worktreeRemovalError{cause: err}
+	}
 
 	return map[string]any{
 		"status":  "cleaned",

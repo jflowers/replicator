@@ -3,6 +3,7 @@ package doctor
 import (
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/unbound-force/replicator/internal/ui"
@@ -15,10 +16,17 @@ import (
 // falls back to plain-text indicators ([PASS], [WARN], [FAIL]).
 func FormatText(results []CheckResult, w io.Writer) error {
 	styles := ui.NewStyles(w)
+	var output strings.Builder
+	writeLine := func(values ...any) {
+		_, _ = fmt.Fprintln(&output, values...) // strings.Builder writes cannot fail.
+	}
+	writeFormat := func(format string, values ...any) {
+		_, _ = fmt.Fprintf(&output, format, values...) // strings.Builder writes cannot fail.
+	}
 
 	// Header with stethoscope emoji.
-	fmt.Fprintln(w, styles.Title.Render("🩺 Replicator Doctor"))
-	fmt.Fprintln(w)
+	writeLine(styles.Title.Render("🩺 Replicator Doctor"))
+	writeLine()
 
 	// Tally counters for the summary box.
 	var passed, warned, failed int
@@ -28,7 +36,7 @@ func FormatText(results []CheckResult, w io.Writer) error {
 		name := fmt.Sprintf("%-14s", r.Name)
 		duration := styles.Dim.Render(fmt.Sprintf("(%s)", r.Duration.Round(time.Millisecond)))
 
-		fmt.Fprintf(w, "  %s %s %s %s\n", indicator, name, r.Message, duration)
+		writeFormat("  %s %s %s %s\n", indicator, name, r.Message, duration)
 
 		switch r.Status {
 		case "pass":
@@ -40,21 +48,24 @@ func FormatText(results []CheckResult, w io.Writer) error {
 		}
 	}
 
-	fmt.Fprintln(w)
+	writeLine()
 
 	// Boxed summary with emoji counters.
 	summaryContent := fmt.Sprintf("  ✅ %d passed  ⚠️  %d warnings  ❌ %d failed",
 		passed, warned, failed)
-	fmt.Fprintln(w, styles.Box.Render(summaryContent))
+	writeLine(styles.Box.Render(summaryContent))
 
 	// Contextual completion message.
 	if failed == 0 && warned == 0 {
-		fmt.Fprintln(w, styles.Pass.Render("🎉 Everything looks good!"))
+		writeLine(styles.Pass.Render("🎉 Everything looks good!"))
 	} else if failed > 0 {
-		fmt.Fprintln(w, styles.Dim.Render("  Run 'replicator setup' to fix common issues."))
+		writeLine(styles.Dim.Render("  Run 'replicator setup' to fix common issues."))
 	} else {
-		fmt.Fprintln(w, styles.Dim.Render("  All critical checks passed."))
+		writeLine(styles.Dim.Render("  All critical checks passed."))
 	}
 
+	if _, err := io.WriteString(w, output.String()); err != nil {
+		return fmt.Errorf("write doctor report: %w", err)
+	}
 	return nil
 }

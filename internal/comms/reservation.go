@@ -1,6 +1,8 @@
 package comms
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -34,61 +36,86 @@ func Reserve(store *db.Store, agentName string, paths []string, exclusive bool, 
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
-
-	// Check for exclusive conflicts on each path.
-	for _, path := range paths {
-		var count int
-		err := tx.QueryRow(`
+	var reservations []Reservation
+	err = runReservationTransaction(func() error {
+		// Check for exclusive conflicts on each path.
+		for _, path := range paths {
+			var count int
+			queryErr := tx.QueryRow(`
 			SELECT COUNT(*) FROM reservations
 			WHERE path = ?
 			  AND exclusive = 1
 			  AND agent_name != ?
 			  AND expires_at > ?`,
-			path, agentName, nowStr,
-		).Scan(&count)
-		if err != nil {
-			return nil, fmt.Errorf("check conflict for %q: %w", path, err)
+				path, agentName, nowStr,
+			).Scan(&count)
+			if queryErr != nil {
+				return fmt.Errorf("check conflict for %q: %w", path, queryErr)
+			}
+			if count > 0 {
+				return fmt.Errorf("path %q is exclusively reserved by another agent", path)
+			}
 		}
-		if count > 0 {
-			return nil, fmt.Errorf("path %q is exclusively reserved by another agent", path)
+
+		exclusiveInt := 0
+		if exclusive {
+			exclusiveInt = 1
 		}
-	}
 
-	exclusiveInt := 0
-	if exclusive {
-		exclusiveInt = 1
-	}
-
-	reservations := make([]Reservation, 0, len(paths))
-	for _, path := range paths {
-		result, err := tx.Exec(`
+		reservations = make([]Reservation, 0, len(paths))
+		for _, path := range paths {
+			result, err := tx.Exec(`
 			INSERT INTO reservations (agent_name, path, exclusive, reason, ttl_seconds, created_at, expires_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			agentName, path, exclusiveInt, reason, ttlSeconds, nowStr, expiresAt,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("insert reservation for %q: %w", path, err)
+				agentName, path, exclusiveInt, reason, ttlSeconds, nowStr, expiresAt,
+			)
+			if err != nil {
+				return fmt.Errorf("insert reservation for %q: %w", path, err)
+			}
+
+			id, _ := result.LastInsertId()
+			reservations = append(reservations, Reservation{
+				ID:         int(id),
+				AgentName:  agentName,
+				Path:       path,
+				Exclusive:  exclusive,
+				Reason:     reason,
+				TTLSeconds: ttlSeconds,
+				CreatedAt:  nowStr,
+				ExpiresAt:  expiresAt,
+			})
 		}
-
-		id, _ := result.LastInsertId()
-		reservations = append(reservations, Reservation{
-			ID:         int(id),
-			AgentName:  agentName,
-			Path:       path,
-			Exclusive:  exclusive,
-			Reason:     reason,
-			TTLSeconds: ttlSeconds,
-			CreatedAt:  nowStr,
-			ExpiresAt:  expiresAt,
-		})
-	}
-
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit reservations: %w", err)
+		return nil
+	}, func() error {
+		if commitErr := tx.Commit(); commitErr != nil {
+			return fmt.Errorf("commit reservations: %w", commitErr)
+		}
+		return nil
+	}, tx.Rollback)
+	if err != nil {
+		return nil, err
 	}
 
 	return reservations, nil
+}
+
+func runReservationTransaction(work, commit, rollback func() error) (err error) {
+	committed := false
+	defer func() {
+		rollbackErr := rollback()
+		if rollbackErr == nil || (committed && errors.Is(rollbackErr, sql.ErrTxDone)) {
+			return
+		}
+		err = errors.Join(err, fmt.Errorf("rollback reservations: %w", rollbackErr))
+	}()
+	if err = work(); err != nil {
+		return err
+	}
+	if err = commit(); err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }
 
 // Release removes reservations by path or reservation ID.

@@ -41,7 +41,9 @@ func TestGetStrategyInsights_WithData(t *testing.T) {
 			"strategy": o.strategy,
 			"success":  o.success,
 		})
-		store.DB.Exec("INSERT INTO events (type, payload) VALUES (?, ?)", "forge_outcome", string(payload))
+		if _, err := store.DB.Exec("INSERT INTO events (type, payload) VALUES (?, ?)", "forge_outcome", string(payload)); err != nil {
+			t.Fatalf("insert outcome: %v", err)
+		}
 	}
 
 	result, err := GetStrategyInsights(store, "task")
@@ -88,7 +90,9 @@ func TestGetFileInsights_WithData(t *testing.T) {
 	}
 	for _, p := range payloads {
 		data, _ := json.Marshal(p)
-		store.DB.Exec("INSERT INTO events (type, payload) VALUES (?, ?)", "forge_outcome", string(data))
+		if _, err := store.DB.Exec("INSERT INTO events (type, payload) VALUES (?, ?)", "forge_outcome", string(data)); err != nil {
+			t.Fatalf("insert outcome: %v", err)
+		}
 	}
 
 	result, err := GetFileInsights(store, []string{"auth.go", "db.go"})
@@ -102,7 +106,9 @@ func TestGetFileInsights_WithData(t *testing.T) {
 	// Marshal and re-parse to get consistent types.
 	data, _ := json.Marshal(insightsRaw)
 	var insights map[string]map[string]int
-	json.Unmarshal(data, &insights)
+	if err := json.Unmarshal(data, &insights); err != nil {
+		t.Fatalf("unmarshal insights: %v", err)
+	}
 
 	authStats := insights["auth.go"]
 	if authStats == nil {
@@ -139,7 +145,9 @@ func TestGetPatternInsights_WithData(t *testing.T) {
 	}
 	for _, p := range payloads {
 		data, _ := json.Marshal(p)
-		store.DB.Exec("INSERT INTO events (type, payload) VALUES (?, ?)", "forge_outcome", string(data))
+		if _, err := store.DB.Exec("INSERT INTO events (type, payload) VALUES (?, ?)", "forge_outcome", string(data)); err != nil {
+			t.Fatalf("insert outcome: %v", err)
+		}
 	}
 
 	result, err := GetPatternInsights(store)

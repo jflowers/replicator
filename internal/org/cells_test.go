@@ -12,7 +12,11 @@ func testStore(t *testing.T) *db.Store {
 	if err != nil {
 		t.Fatalf("OpenMemory: %v", err)
 	}
-	t.Cleanup(func() { store.Close() })
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	})
 	return store
 }
 
@@ -70,9 +74,13 @@ func TestQueryCells_Empty(t *testing.T) {
 func TestQueryCells_ByStatus(t *testing.T) {
 	store := testStore(t)
 
-	CreateCell(store, CreateCellInput{Title: "Open task"})
+	if _, err := CreateCell(store, CreateCellInput{Title: "Open task"}); err != nil {
+		t.Fatalf("CreateCell: %v", err)
+	}
 	cell2, _ := CreateCell(store, CreateCellInput{Title: "Done task"})
-	CloseCell(store, cell2.ID, "completed")
+	if err := CloseCell(store, cell2.ID, "completed"); err != nil {
+		t.Fatalf("CloseCell: %v", err)
+	}
 
 	open, err := QueryCells(store, CellQuery{Status: "open"})
 	if err != nil {
@@ -94,8 +102,12 @@ func TestQueryCells_ByStatus(t *testing.T) {
 func TestQueryCells_ByType(t *testing.T) {
 	store := testStore(t)
 
-	CreateCell(store, CreateCellInput{Title: "Bug", Type: "bug"})
-	CreateCell(store, CreateCellInput{Title: "Feature", Type: "feature"})
+	if _, err := CreateCell(store, CreateCellInput{Title: "Bug", Type: "bug"}); err != nil {
+		t.Fatalf("CreateCell: %v", err)
+	}
+	if _, err := CreateCell(store, CreateCellInput{Title: "Feature", Type: "feature"}); err != nil {
+		t.Fatalf("CreateCell: %v", err)
+	}
 
 	bugs, err := QueryCells(store, CellQuery{Type: "bug"})
 	if err != nil {

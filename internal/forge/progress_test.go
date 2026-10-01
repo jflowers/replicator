@@ -13,7 +13,9 @@ func TestProgress(t *testing.T) {
 	}
 
 	var count int
-	store.DB.QueryRow("SELECT COUNT(*) FROM events WHERE type = 'forge_progress'").Scan(&count)
+	if err := store.DB.QueryRow("SELECT COUNT(*) FROM events WHERE type = 'forge_progress'").Scan(&count); err != nil {
+		t.Fatalf("scan event count: %v", err)
+	}
 	if count != 1 {
 		t.Errorf("expected 1 progress event, got %d", count)
 	}
@@ -31,10 +33,12 @@ func TestComplete(t *testing.T) {
 	store := testStore(t)
 
 	// Create a cell to complete.
-	store.DB.Exec(
+	if _, err := store.DB.Exec(
 		"INSERT INTO beads (id, title, type, status) VALUES (?, ?, ?, ?)",
 		"cell-comp", "Complete me", "task", "in_progress",
-	)
+	); err != nil {
+		t.Fatalf("insert cell: %v", err)
+	}
 
 	result, err := Complete(store, "proj-1", "worker-1", "cell-comp", "All done", []string{"a.go"}, "good", false, false)
 	if err != nil {
@@ -46,14 +50,18 @@ func TestComplete(t *testing.T) {
 
 	// Verify event.
 	var count int
-	store.DB.QueryRow("SELECT COUNT(*) FROM events WHERE type = 'forge_complete'").Scan(&count)
+	if err := store.DB.QueryRow("SELECT COUNT(*) FROM events WHERE type = 'forge_complete'").Scan(&count); err != nil {
+		t.Fatalf("scan event count: %v", err)
+	}
 	if count != 1 {
 		t.Errorf("expected 1 complete event, got %d", count)
 	}
 
 	// Verify cell status.
 	var status string
-	store.DB.QueryRow("SELECT status FROM beads WHERE id = 'cell-comp'").Scan(&status)
+	if err := store.DB.QueryRow("SELECT status FROM beads WHERE id = 'cell-comp'").Scan(&status); err != nil {
+		t.Fatalf("scan cell status: %v", err)
+	}
 	if status != "closed" {
 		t.Errorf("cell status = %q, want %q", status, "closed")
 	}
@@ -71,14 +79,20 @@ func TestStatus(t *testing.T) {
 	store := testStore(t)
 
 	// Create an epic with subtasks.
-	store.DB.Exec("INSERT INTO beads (id, title, type, status) VALUES (?, ?, ?, ?)",
-		"epic-1", "Epic", "epic", "open")
-	store.DB.Exec("INSERT INTO beads (id, title, type, status, parent_id) VALUES (?, ?, ?, ?, ?)",
-		"sub-1", "Sub 1", "task", "open", "epic-1")
-	store.DB.Exec("INSERT INTO beads (id, title, type, status, parent_id) VALUES (?, ?, ?, ?, ?)",
-		"sub-2", "Sub 2", "task", "closed", "epic-1")
-	store.DB.Exec("INSERT INTO beads (id, title, type, status, parent_id) VALUES (?, ?, ?, ?, ?)",
-		"sub-3", "Sub 3", "task", "in_progress", "epic-1")
+	statements := []struct {
+		query string
+		args  []any
+	}{
+		{"INSERT INTO beads (id, title, type, status) VALUES (?, ?, ?, ?)", []any{"epic-1", "Epic", "epic", "open"}},
+		{"INSERT INTO beads (id, title, type, status, parent_id) VALUES (?, ?, ?, ?, ?)", []any{"sub-1", "Sub 1", "task", "open", "epic-1"}},
+		{"INSERT INTO beads (id, title, type, status, parent_id) VALUES (?, ?, ?, ?, ?)", []any{"sub-2", "Sub 2", "task", "closed", "epic-1"}},
+		{"INSERT INTO beads (id, title, type, status, parent_id) VALUES (?, ?, ?, ?, ?)", []any{"sub-3", "Sub 3", "task", "in_progress", "epic-1"}},
+	}
+	for _, statement := range statements {
+		if _, err := store.DB.Exec(statement.query, statement.args...); err != nil {
+			t.Fatalf("insert cell: %v", err)
+		}
+	}
 
 	result, err := Status(store, "epic-1", "proj-1")
 	if err != nil {
@@ -112,8 +126,10 @@ func TestStatus_MissingEpicID(t *testing.T) {
 func TestStatus_NoSubtasks(t *testing.T) {
 	store := testStore(t)
 
-	store.DB.Exec("INSERT INTO beads (id, title, type, status) VALUES (?, ?, ?, ?)",
-		"epic-empty", "Empty Epic", "epic", "open")
+	if _, err := store.DB.Exec("INSERT INTO beads (id, title, type, status) VALUES (?, ?, ?, ?)",
+		"epic-empty", "Empty Epic", "epic", "open"); err != nil {
+		t.Fatalf("insert epic: %v", err)
+	}
 
 	result, err := Status(store, "epic-empty", "proj")
 	if err != nil {
@@ -133,7 +149,9 @@ func TestRecordOutcome(t *testing.T) {
 	}
 
 	var count int
-	store.DB.QueryRow("SELECT COUNT(*) FROM events WHERE type = 'forge_outcome'").Scan(&count)
+	if err := store.DB.QueryRow("SELECT COUNT(*) FROM events WHERE type = 'forge_outcome'").Scan(&count); err != nil {
+		t.Fatalf("scan outcome count: %v", err)
+	}
 	if count != 1 {
 		t.Errorf("expected 1 outcome event, got %d", count)
 	}

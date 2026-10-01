@@ -1,6 +1,18 @@
 package comms
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
+
+func TestCombineInboxCloseError_PreservesBothErrors(t *testing.T) {
+	errScan := errors.New("scan sentinel")
+	errClose := errors.New("close sentinel")
+	err := combineInboxCloseError(errScan, errClose)
+	if !errors.Is(err, errScan) || !errors.Is(err, errClose) {
+		t.Fatalf("combined error %v does not preserve both sentinels", err)
+	}
+}
 
 func TestSendAndReadMessage(t *testing.T) {
 	store := testStore(t)
@@ -60,11 +72,13 @@ func TestInbox(t *testing.T) {
 
 	// Send 3 messages to worker-1.
 	for i := 0; i < 3; i++ {
-		Send(store, "coordinator", SendInput{
+		if err := Send(store, "coordinator", SendInput{
 			To:      []string{"worker-1"},
 			Subject: "Message",
 			Body:    "body",
-		})
+		}); err != nil {
+			t.Fatalf("Send: %v", err)
+		}
 	}
 
 	summaries, err := Inbox(store, "worker-1", 5, false)
@@ -82,11 +96,13 @@ func TestInbox_MaxFive(t *testing.T) {
 
 	// Send 7 messages.
 	for i := 0; i < 7; i++ {
-		Send(store, "coordinator", SendInput{
+		if err := Send(store, "coordinator", SendInput{
 			To:      []string{"worker-1"},
 			Subject: "Message",
 			Body:    "body",
-		})
+		}); err != nil {
+			t.Fatalf("Send: %v", err)
+		}
 	}
 
 	summaries, err := Inbox(store, "worker-1", 0, false)
@@ -101,18 +117,22 @@ func TestInbox_MaxFive(t *testing.T) {
 func TestInbox_UrgentOnly(t *testing.T) {
 	store := testStore(t)
 
-	Send(store, "coordinator", SendInput{
+	if err := Send(store, "coordinator", SendInput{
 		To:         []string{"worker-1"},
 		Subject:    "Normal",
 		Body:       "normal body",
 		Importance: "normal",
-	})
-	Send(store, "coordinator", SendInput{
+	}); err != nil {
+		t.Fatalf("Send normal: %v", err)
+	}
+	if err := Send(store, "coordinator", SendInput{
 		To:         []string{"worker-1"},
 		Subject:    "Urgent",
 		Body:       "urgent body",
 		Importance: "urgent",
-	})
+	}); err != nil {
+		t.Fatalf("Send urgent: %v", err)
+	}
 
 	summaries, err := Inbox(store, "worker-1", 5, true)
 	if err != nil {
@@ -141,12 +161,14 @@ func TestInbox_Empty(t *testing.T) {
 func TestAck(t *testing.T) {
 	store := testStore(t)
 
-	Send(store, "coordinator", SendInput{
+	if err := Send(store, "coordinator", SendInput{
 		To:          []string{"worker-1"},
 		Subject:     "Ack me",
 		Body:        "body",
 		AckRequired: true,
-	})
+	}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
 
 	// Verify ack_required is set.
 	msg, _ := ReadMessage(store, 1)

@@ -31,8 +31,12 @@ func TestReadyCell_NoParent(t *testing.T) {
 	store := testStore(t)
 
 	// Create two open cells with different priorities.
-	CreateCell(store, CreateCellInput{Title: "Low priority", Priority: 1})
-	CreateCell(store, CreateCellInput{Title: "High priority", Priority: 3})
+	if _, err := CreateCell(store, CreateCellInput{Title: "Low priority", Priority: 1}); err != nil {
+		t.Fatalf("CreateCell low priority: %v", err)
+	}
+	if _, err := CreateCell(store, CreateCellInput{Title: "High priority", Priority: 3}); err != nil {
+		t.Fatalf("CreateCell high priority: %v", err)
+	}
 
 	cell, err := ReadyCell(store)
 	if err != nil {
@@ -72,7 +76,9 @@ func TestReadyCell_BlockedByParent(t *testing.T) {
 
 	// The subtask should be blocked because its parent epic is open.
 	// Create a standalone cell with lower priority.
-	CreateCell(store, CreateCellInput{Title: "Standalone", Priority: 1})
+	if _, err := CreateCell(store, CreateCellInput{Title: "Standalone", Priority: 1}); err != nil {
+		t.Fatalf("CreateCell standalone: %v", err)
+	}
 
 	cell, err := ReadyCell(store)
 	if err != nil {
@@ -87,7 +93,9 @@ func TestReadyCell_BlockedByParent(t *testing.T) {
 	}
 
 	// Close the epic -- now the subtask should become ready.
-	CloseCell(store, epic.ID, "done")
+	if err := CloseCell(store, epic.ID, "done"); err != nil {
+		t.Fatalf("CloseCell epic: %v", err)
+	}
 
 	cell, err = ReadyCell(store)
 	if err != nil {
@@ -106,7 +114,9 @@ func TestReadyCell_AllClosed(t *testing.T) {
 	store := testStore(t)
 
 	cell, _ := CreateCell(store, CreateCellInput{Title: "Close me"})
-	CloseCell(store, cell.ID, "done")
+	if err := CloseCell(store, cell.ID, "done"); err != nil {
+		t.Fatalf("CloseCell: %v", err)
+	}
 
 	ready, err := ReadyCell(store)
 	if err != nil {

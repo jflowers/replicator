@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -26,27 +27,40 @@ func serveMCP() error {
 	// Set up structured logging to file (and stderr).
 	// Bootstrap exception: use fmt.Fprintf for errors before the logger exists.
 	logger, logCloser := setupLogger()
-	if logCloser != nil {
-		defer logCloser.Close()
+	return runAndClose(func() (err error) {
+		store, err := db.Open(cfg.DatabasePath)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if closeErr := store.Close(); closeErr != nil {
+				err = errors.Join(err, fmt.Errorf("close database: %w", closeErr))
+			}
+		}()
+
+		reg := registry.New()
+		org.Register(reg, store)
+		commstools.Register(reg, store)
+		forgetools.Register(reg, store)
+
+		// Memory tools proxy to Dewey for semantic search.
+		memClient := memory.NewClient(cfg.DeweyURL)
+		memorytools.Register(reg, memClient)
+
+		server := mcp.NewServer(reg, Version, logger)
+		return server.ServeStdio()
+	}, logCloser)
+}
+
+func runAndClose(run func() error, closer io.Closer) (err error) {
+	if closer != nil {
+		defer func() {
+			if closeErr := closer.Close(); closeErr != nil {
+				err = errors.Join(err, fmt.Errorf("close log: %w", closeErr))
+			}
+		}()
 	}
-
-	store, err := db.Open(cfg.DatabasePath)
-	if err != nil {
-		return err
-	}
-	defer store.Close()
-
-	reg := registry.New()
-	org.Register(reg, store)
-	commstools.Register(reg, store)
-	forgetools.Register(reg, store)
-
-	// Memory tools proxy to Dewey for semantic search.
-	memClient := memory.NewClient(cfg.DeweyURL)
-	memorytools.Register(reg, memClient)
-
-	server := mcp.NewServer(reg, Version, logger)
-	return server.ServeStdio()
+	return run()
 }
 
 // setupLogger creates a charmbracelet/log logger that writes to both

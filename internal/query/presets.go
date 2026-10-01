@@ -6,6 +6,7 @@
 package query
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -13,6 +14,17 @@ import (
 	"github.com/unbound-force/replicator/internal/db"
 	"github.com/unbound-force/replicator/internal/ui"
 )
+
+type queryRows interface {
+	Next() bool
+	Scan(...any) error
+	Err() error
+	Close() error
+}
+
+type countRow interface {
+	Scan(...any) error
+}
 
 // Preset names.
 const (
@@ -59,31 +71,25 @@ func runAgentActivity(store *db.Store, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("query agent activity: %w", err)
 	}
-	defer rows.Close()
-
 	styles := ui.NewStyles(w)
-	var tableRows [][]string
-
-	for rows.Next() {
+	tableRows, err := readTableRows(rows, func(rows queryRows) ([]string, error) {
 		var agent string
 		var events int
 		if err := rows.Scan(&agent, &events); err != nil {
-			return err
+			return nil, err
 		}
-		tableRows = append(tableRows, []string{agent, strconv.Itoa(events)})
-	}
-	if err := rows.Err(); err != nil {
+		return []string{agent, strconv.Itoa(events)}, nil
+	})
+	if err != nil {
 		return err
 	}
 
 	if len(tableRows) == 0 {
-		fmt.Fprintln(w, styles.Dim.Render("(no activity in last 24 hours)"))
-		return nil
+		return writeLine(w, styles.Dim.Render("(no activity in last 24 hours)"))
 	}
 
 	t := ui.NewTable(styles, []string{"AGENT", "EVENTS (24h)"}, tableRows)
-	fmt.Fprintln(w, t.String())
-	return nil
+	return writeLine(w, t.String())
 }
 
 func runCellsByStatus(store *db.Store, w io.Writer) error {
@@ -95,51 +101,56 @@ func runCellsByStatus(store *db.Store, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("query cells by status: %w", err)
 	}
-	defer rows.Close()
-
 	styles := ui.NewStyles(w)
-	var tableRows [][]string
-
-	for rows.Next() {
+	tableRows, err := readTableRows(rows, func(rows queryRows) ([]string, error) {
 		var status, cellType string
 		var n int
 		if err := rows.Scan(&status, &cellType, &n); err != nil {
-			return err
+			return nil, err
 		}
-		tableRows = append(tableRows, []string{status, cellType, strconv.Itoa(n)})
-	}
-	if err := rows.Err(); err != nil {
+		return []string{status, cellType, strconv.Itoa(n)}, nil
+	})
+	if err != nil {
 		return err
 	}
 
 	if len(tableRows) == 0 {
-		fmt.Fprintln(w, styles.Dim.Render("(no cells)"))
-		return nil
+		return writeLine(w, styles.Dim.Render("(no cells)"))
 	}
 
 	t := ui.NewTable(styles, []string{"STATUS", "TYPE", "COUNT"}, tableRows)
-	fmt.Fprintln(w, t.String())
-	return nil
+	return writeLine(w, t.String())
 }
 
 func runForgeCompletionRate(store *db.Store, w io.Writer) error {
 	styles := ui.NewStyles(w)
 
 	// Count completed vs total forge events.
-	var total, completed int
-	store.DB.QueryRow(`SELECT COUNT(*) FROM events WHERE type LIKE 'forge_%'`).Scan(&total)
-	store.DB.QueryRow(`SELECT COUNT(*) FROM events WHERE type = 'forge_complete'`).Scan(&completed)
+	total, completed, err := scanForgeCounts(
+		store.DB.QueryRow(`SELECT COUNT(*) FROM events WHERE type LIKE 'forge_%'`),
+		func() countRow {
+			return store.DB.QueryRow(`SELECT COUNT(*) FROM events WHERE type = 'forge_complete'`)
+		},
+	)
+	if err != nil {
+		return err
+	}
 
-	fmt.Fprintln(w, styles.Bold.Render("Forge Completion Rate:"))
-	fmt.Fprintf(w, "  Total forge events:     %d\n", total)
-	fmt.Fprintf(w, "  Completed:              %d\n", completed)
+	if err := writeLine(w, styles.Bold.Render("Forge Completion Rate:")); err != nil {
+		return err
+	}
+	if err := writeFormat(w, "  Total forge events:     %d\n", total); err != nil {
+		return err
+	}
+	if err := writeFormat(w, "  Completed:              %d\n", completed); err != nil {
+		return err
+	}
 	if total > 0 {
 		rate := float64(completed) / float64(total) * 100
-		fmt.Fprintf(w, "  Completion rate:        %.1f%%\n", rate)
+		return writeFormat(w, "  Completion rate:        %.1f%%\n", rate)
 	} else {
-		fmt.Fprintln(w, styles.Dim.Render("  Completion rate:        N/A (no forge events)"))
+		return writeLine(w, styles.Dim.Render("  Completion rate:        N/A (no forge events)"))
 	}
-	return nil
 }
 
 func runRecentEvents(store *db.Store, w io.Writer) error {
@@ -151,29 +162,70 @@ func runRecentEvents(store *db.Store, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("query recent events: %w", err)
 	}
-	defer rows.Close()
-
 	styles := ui.NewStyles(w)
-	var tableRows [][]string
-
-	for rows.Next() {
+	tableRows, err := readTableRows(rows, func(rows queryRows) ([]string, error) {
 		var id int
 		var eventType, projectKey, createdAt string
 		if err := rows.Scan(&id, &eventType, &projectKey, &createdAt); err != nil {
-			return err
+			return nil, err
 		}
-		tableRows = append(tableRows, []string{strconv.Itoa(id), eventType, projectKey, createdAt})
-	}
-	if err := rows.Err(); err != nil {
+		return []string{strconv.Itoa(id), eventType, projectKey, createdAt}, nil
+	})
+	if err != nil {
 		return err
 	}
 
 	if len(tableRows) == 0 {
-		fmt.Fprintln(w, styles.Dim.Render("(no events)"))
-		return nil
+		return writeLine(w, styles.Dim.Render("(no events)"))
 	}
 
 	t := ui.NewTable(styles, []string{"ID", "TYPE", "PROJECT", "CREATED"}, tableRows)
-	fmt.Fprintln(w, t.String())
+	return writeLine(w, t.String())
+}
+
+func writeLine(w io.Writer, values ...any) error {
+	if _, err := fmt.Fprintln(w, values...); err != nil {
+		return fmt.Errorf("write preset output: %w", err)
+	}
 	return nil
+}
+
+func writeFormat(w io.Writer, format string, values ...any) error {
+	if _, err := fmt.Fprintf(w, format, values...); err != nil {
+		return fmt.Errorf("write preset output: %w", err)
+	}
+	return nil
+}
+
+func readTableRows(rows queryRows, scan func(queryRows) ([]string, error)) (tableRows [][]string, err error) {
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			tableRows = nil
+			err = errors.Join(err, fmt.Errorf("close rows: %w", closeErr))
+		}
+	}()
+
+	for rows.Next() {
+		row, scanErr := scan(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("scan rows: %w", scanErr)
+		}
+		tableRows = append(tableRows, row)
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, fmt.Errorf("iterate rows: %w", rowsErr)
+	}
+	return tableRows, nil
+}
+
+func scanForgeCounts(totalRow countRow, completedRow func() countRow) (int, int, error) {
+	var total int
+	if err := totalRow.Scan(&total); err != nil {
+		return 0, 0, fmt.Errorf("scan total forge events: %w", err)
+	}
+	var completed int
+	if err := completedRow().Scan(&completed); err != nil {
+		return 0, 0, fmt.Errorf("scan completed forge events: %w", err)
+	}
+	return total, completed, nil
 }

@@ -67,7 +67,9 @@ func forgeInit(store *db.Store) *registry.Tool {
 				Isolation   string `json:"isolation"`
 			}
 			if len(args) > 0 {
-				json.Unmarshal(args, &input)
+				if err := json.Unmarshal(args, &input); err != nil {
+					return "", err
+				}
 			}
 			result, err := forge.Init(store, input.ProjectPath, input.Isolation)
 			if err != nil {
