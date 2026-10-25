@@ -135,7 +135,7 @@ func TestForgeSpawnSubtask_ExecuteReturnsEnvelope(t *testing.T) {
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("# deploy"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("# deploy"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
