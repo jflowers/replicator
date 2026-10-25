@@ -3,6 +3,7 @@ package forge
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/unbound-force/replicator/internal/db"
 	"github.com/unbound-force/replicator/internal/forge"
@@ -203,7 +204,7 @@ func forgeValidateDecomposition() *registry.Tool {
 func forgeSubtaskPrompt() *registry.Tool {
 	return &registry.Tool{
 		Name:        "forge_subtask_prompt",
-		Description: "Generate the prompt for a spawned subtask agent.",
+		Description: "Generate the prompt for a spawned subtask agent. When skill is supplied, the fixed skill directive is embedded in the prompt.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"required": ["agent_name", "bead_id", "epic_id", "subtask_title", "files"],
@@ -212,11 +213,12 @@ func forgeSubtaskPrompt() *registry.Tool {
 				"bead_id":             {"type": "string"},
 				"epic_id":             {"type": "string"},
 				"subtask_title":       {"type": "string"},
-				"files":               {"type": "array", "items": {"type": "string"}},
-				"shared_context":      {"type": "string"},
-				"subtask_description": {"type": "string"}
-			}
-		}`),
+			"files":               {"type": "array", "items": {"type": "string"}},
+			"shared_context":      {"type": "string"},
+			"subtask_description": {"type": "string"},
+			"skill":               {"type": "string"}
+		}
+	}`),
 		Execute: func(args json.RawMessage) (string, error) {
 			var input struct {
 				AgentName    string   `json:"agent_name"`
@@ -225,11 +227,12 @@ func forgeSubtaskPrompt() *registry.Tool {
 				SubtaskTitle string   `json:"subtask_title"`
 				Files        []string `json:"files"`
 				SharedCtx    string   `json:"shared_context"`
+				Skill        string   `json:"skill"`
 			}
 			if err := json.Unmarshal(args, &input); err != nil {
 				return "", err
 			}
-			prompt := forge.SubtaskPrompt(input.AgentName, input.BeadID, input.EpicID, input.SubtaskTitle, input.Files, input.SharedCtx)
+			prompt := forge.SubtaskPrompt(input.AgentName, input.BeadID, input.EpicID, input.SubtaskTitle, input.Files, input.SharedCtx, input.Skill)
 			return prompt, nil
 		},
 	}
@@ -238,32 +241,53 @@ func forgeSubtaskPrompt() *registry.Tool {
 func forgeSpawnSubtask() *registry.Tool {
 	return &registry.Tool{
 		Name:        "forge_spawn_subtask",
-		Description: "Prepare a subtask for spawning with Task tool.",
+		Description: "Prepare a subtask for spawning with Task tool. Delegation contract: task_classification is required (deterministic|judgment); deterministic-classified subtasks must supply a verified skill/script reference (skill) or a recorded skill_absent_reason (mutually exclusive); judgment-classified subtasks must omit both. Violations fail closed with SKILL_REFERENCE_REQUIRED or SKILL_NOT_FOUND.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
-			"required": ["bead_id", "epic_id", "subtask_title", "files"],
+			"required": ["bead_id", "epic_id", "subtask_title", "files", "task_classification"],
 			"properties": {
 				"bead_id":              {"type": "string"},
 				"epic_id":              {"type": "string"},
 				"subtask_title":        {"type": "string"},
 				"files":                {"type": "array", "items": {"type": "string"}},
 				"subtask_description":  {"type": "string"},
-				"shared_context":       {"type": "string"}
+				"shared_context":       {"type": "string"},
+				"task_classification":  {"type": "string", "enum": ["deterministic", "judgment"]},
+				"skill":                {"type": "string", "minLength": 1, "maxLength": 256},
+				"skill_absent_reason":  {"type": "string", "minLength": 1, "maxLength": 512},
+				"project_path":         {"type": "string", "default": "."}
 			}
 		}`),
 		Execute: func(args json.RawMessage) (string, error) {
+			// The *string shadows overlap the promoted SpawnParams
+			// string fields so encoding/json's shallowest-depth field
+			// resolution fills the pointers instead: nil means the
+			// field was omitted from the JSON, non-nil empty means it
+			// was supplied empty and is rejected below. SpawnSubtask
+			// itself treats empty strings as absent, so the tool
+			// boundary is the only layer that can tell them apart.
 			var input struct {
-				BeadID      string   `json:"bead_id"`
-				EpicID      string   `json:"epic_id"`
-				Title       string   `json:"subtask_title"`
-				Files       []string `json:"files"`
-				Description string   `json:"subtask_description"`
-				SharedCtx   string   `json:"shared_context"`
+				forge.SpawnParams
+				Skill             *string `json:"skill"`
+				SkillAbsentReason *string `json:"skill_absent_reason"`
 			}
 			if err := json.Unmarshal(args, &input); err != nil {
 				return "", err
 			}
-			result, err := forge.SpawnSubtask(input.BeadID, input.EpicID, input.Title, input.Files, input.Description, input.SharedCtx)
+			if input.Skill != nil && *input.Skill == "" {
+				return "", fmt.Errorf("skill must not be an empty string; omit the field when no skill applies")
+			}
+			if input.SkillAbsentReason != nil && *input.SkillAbsentReason == "" {
+				return "", fmt.Errorf("skill_absent_reason must not be an empty string; omit the field when no reason applies")
+			}
+			params := input.SpawnParams
+			if input.Skill != nil {
+				params.Skill = *input.Skill
+			}
+			if input.SkillAbsentReason != nil {
+				params.SkillAbsentReason = *input.SkillAbsentReason
+			}
+			result, err := forge.SpawnSubtask(params)
 			if err != nil {
 				return "", err
 			}

@@ -1032,7 +1032,7 @@ Analyze task and recommend decomposition strategy.
 
 ### `forge_spawn_subtask`
 
-Prepare a subtask for spawning with Task tool.
+Prepare a subtask for spawning with Task tool. Delegation contract: task_classification is required (deterministic|judgment); deterministic-classified subtasks must supply a verified skill/script reference (skill) or a recorded skill_absent_reason (mutually exclusive); judgment-classified subtasks must omit both. Violations fail closed with SKILL_REFERENCE_REQUIRED or SKILL_NOT_FOUND.
 
 ```json
 {
@@ -1049,7 +1049,21 @@ Prepare a subtask for spawning with Task tool.
       },
       "type": "array"
     },
+    "project_path": {
+      "default": ".",
+      "type": "string"
+    },
     "shared_context": {
+      "type": "string"
+    },
+    "skill": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "skill_absent_reason": {
+      "maxLength": 512,
+      "minLength": 1,
       "type": "string"
     },
     "subtask_description": {
@@ -1057,13 +1071,21 @@ Prepare a subtask for spawning with Task tool.
     },
     "subtask_title": {
       "type": "string"
+    },
+    "task_classification": {
+      "enum": [
+        "deterministic",
+        "judgment"
+      ],
+      "type": "string"
     }
   },
   "required": [
     "bead_id",
     "epic_id",
     "subtask_title",
-    "files"
+    "files",
+    "task_classification"
   ],
   "type": "object"
 }
@@ -1093,7 +1115,7 @@ Get status of a swarm by epic ID.
 
 ### `forge_subtask_prompt`
 
-Generate the prompt for a spawned subtask agent.
+Generate the prompt for a spawned subtask agent. When skill is supplied, the fixed skill directive is embedded in the prompt.
 
 ```json
 {
@@ -1114,6 +1136,9 @@ Generate the prompt for a spawned subtask agent.
       "type": "array"
     },
     "shared_context": {
+      "type": "string"
+    },
+    "skill": {
       "type": "string"
     },
     "subtask_description": {

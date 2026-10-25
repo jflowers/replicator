@@ -836,6 +836,41 @@ func TestForgeMD_StructuralHardening(t *testing.T) {
 	})
 }
 
+// TestAgentKit_DelegationContractDemonstrated verifies the embedded
+// kit demonstrates the forge_spawn_subtask delegation contract:
+// the coordinator agent, the /forge command, and the
+// forge-coordination skill all show task_classification, the
+// reference-or-reason rule, the judgment-side prohibition, and the
+// tool-rendered skill_directive forwarding rule.
+func TestAgentKit_DelegationContractDemonstrated(t *testing.T) {
+	cases := []struct {
+		path string
+	}{
+		{"content/agents/coordinator.md"},
+		{"content/commands/forge.md"},
+		{"content/skills/forge-coordination/SKILL.md"},
+	}
+	for _, tc := range cases {
+		data, err := content.ReadFile(tc.path)
+		if err != nil {
+			t.Fatalf("read %s: %v", tc.path, err)
+		}
+		text := string(data)
+		for _, needle := range []string{
+			"forge_spawn_subtask",
+			"task_classification",
+			"skill_absent_reason",
+			"SKILL_REFERENCE_REQUIRED",
+			"omit both",
+			"skill_directive",
+		} {
+			if !strings.Contains(text, needle) {
+				t.Errorf("%s: delegation contract marker %q not found", tc.path, needle)
+			}
+		}
+	}
+}
+
 func TestForgeCoordinationSkill_StructuralHardening(t *testing.T) {
 	data, err := content.ReadFile("content/skills/forge-coordination/SKILL.md")
 	if err != nil {

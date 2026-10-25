@@ -64,6 +64,19 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   (Part of unbound-force/unbound-force#428)
 - Slash commands migrated to `uf.*` namespace (e.g., `/unleash` is
   now `/uf.unleash`, `/cobalt-crush` is now `/uf.cobalt-crush`)
+- **BREAKING**: `forge_spawn_subtask` now enforces the delegation
+  contract: `task_classification` is required (`deterministic` or
+  `judgment`); deterministic-classified subtasks must supply a
+  `skill` reference (1-256 chars, existence-verified) or a
+  `skill_absent_reason` (1-512 chars) — never both; judgment-classified
+  subtasks must omit both. Violations fail closed with
+  `SKILL_REFERENCE_REQUIRED` or `SKILL_NOT_FOUND`. The success
+  envelope gains `task_classification`, the resolved skill path,
+  `skill_absent_reason`, and the tool-rendered `skill_directive`;
+  `forge_subtask_prompt` gains an optional `skill` parameter that
+  embeds the same fixed directive.
+  (Fixes [#143](https://github.com/unbound-force/replicator/issues/143))
+  - Spec: `openspec/changes/spawn-subtask-skill-enforcement/specs/spawn-delegation-contract/spec.md`
 
 ### Security
 - Minimum Go toolchain raised to 1.26.9 to resolve reachable standard-library
