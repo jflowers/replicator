@@ -77,6 +77,16 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   embeds the same fixed directive.
   (Fixes [#143](https://github.com/unbound-force/replicator/issues/143))
   - Spec: `openspec/changes/spawn-subtask-skill-enforcement/specs/spawn-delegation-contract/spec.md`
+- **BREAKING**: `replicator init` now smart-syncs scaffolded agent kit
+  files by default: it creates missing files, skips files byte-identical
+  to the embedded content, and updates drifted files to match it
+  (embedded content is canonical). Previously `init` skipped all
+  existing kit files, and `--force` overwrote every file. A new
+  `--skip-existing` flag restores the old skip-all-existing behavior for
+  repositories that intentionally customize kit files. `--force` is
+  deprecated: still accepted for backward compatibility, but now a
+  no-op since smart-sync is the default.
+  - Spec: `openspec/changes/init-smart-sync/specs/agentkit-scaffolding/spec.md`
 
 ### Security
 - Minimum Go toolchain raised to 1.26.9 to resolve reachable standard-library
