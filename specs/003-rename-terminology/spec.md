@@ -37,6 +37,7 @@ A developer runs `replicator init` in a project directory and receives a complet
 1. **Given** a directory without `.opencode/`, **When** `replicator init` is run, **Then** `.uf/replicator/cells.json` is created AND 15 agent kit files are created under `.opencode/`.
 2. **Given** `.opencode/command/forge.md` already exists, **When** `replicator init` is run without `--force`, **Then** the existing file is NOT overwritten and a message indicates it was skipped.
 3. **Given** `replicator init --force` is run, **When** agent kit files already exist, **Then** all files are overwritten with the latest versions from the binary.
+   > **Scenarios 2-3 superseded 2026-10-26** by `openspec/changes/init-smart-sync/` -- smart-sync overwrites drifted kit files by default; `--skip-existing` restores the old skip behavior.
 4. **Given** the agent kit is installed, **When** an AI agent loads the project in OpenCode, **Then** `/forge`, `/org`, `/inbox`, `/forge:status`, and `/handoff` are available as slash commands.
 
 ---
@@ -76,6 +77,7 @@ All documentation (README, AGENTS.md, constitution, tool reference, spec artifac
 ### Edge Cases
 
 - What happens if a project already has `.opencode/command/forge.md` from a previous `replicator init`? The file is skipped unless `--force` is passed.
+  > **Superseded 2026-10-26** by `openspec/changes/init-smart-sync/` -- smart-sync overwrites drifted kit files by default; `--skip-existing` restores the old skip behavior.
 - What happens if an agent sends a request using an old tool name (`hive_cells`)? The MCP server returns "Unknown tool" error. There are no backward-compatible aliases.
 - What happens to parity test fixtures that reference old tool names? The fixtures are updated to use the new names. Parity testing compares response shapes, not tool names.
 - What happens to the `hivemind_*` deprecated tools? They keep their names. They are Dewey proxy stubs with deprecation messages and are not part of the org/comms/forge namespace.
@@ -98,6 +100,7 @@ All documentation (README, AGENTS.md, constitution, tool reference, spec artifac
 - **FR-009**: `replicator init` MUST create 3 agent files in `.opencode/agents/`: `coordinator.md`, `worker.md`, `background-worker.md`.
 - **FR-010**: Agent kit files MUST be embedded in the binary and written from embedded content on `init`.
 - **FR-011**: `replicator init` MUST NOT overwrite existing agent kit files unless `--force` is passed.
+  > **Superseded 2026-10-26** by `openspec/changes/init-smart-sync/` -- smart-sync overwrites drifted kit files by default; `--skip-existing` restores the old skip behavior.
 - **FR-012**: All command files MUST reference the new tool names (`org_*`, `comms_*`, `forge_*`).
 
 #### Naming Convention

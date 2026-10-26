@@ -14,6 +14,8 @@
 | **New flag** | `replicator init --force` |
 | **CI commands** | `go vet ./...` → `go test ./... -count=1 -race` → `go build` |
 
+> **`replicator init --force` superseded 2026-10-26** by `openspec/changes/init-smart-sync/` -- smart-sync overwrites drifted kit files by default; `--skip-existing` restores the old skip behavior.
+
 ## Rename Cheat Sheet
 
 ```
