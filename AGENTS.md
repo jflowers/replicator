@@ -425,7 +425,7 @@ make install        # Install to GOPATH/bin
 
 | Command | Purpose |
 | --- | --- |
-| `replicator init` | Per-repo setup: creates `.uf/replicator/` with empty `cells.json` + scaffolds agent kit |
+| `replicator init` | Per-repo setup: creates `.uf/replicator/` + scaffolds agent kit (smart-sync: updates drifted files; `--skip-existing` to preserve) |
 | `replicator setup` | Per-machine setup: creates `~/.config/uf/replicator/` + SQLite DB |
 | `replicator serve` | Start MCP JSON-RPC server on stdio |
 | `replicator cells` | List org cells (work items) |
@@ -471,6 +471,20 @@ The `replicator init` command scaffolds agent kit files into
 `internal/agentkit/content/`. The scaffolded copies and
 embedded copies MUST be byte-identical. Changes to either
 location MUST be synchronized to the other.
+
+`replicator init` smart-syncs the agent kit by default and is
+the mechanical repair path for drifted pairs: it creates
+missing files, skips files byte-identical to the embedded
+content, and updates drifted files to the embedded content
+(embedded is canonical, compared via `bytes.Equal`).
+`cells.json` and DCP scaffolding are unchanged; `--force` is
+a deprecated no-op. Warning: smart-sync overwrites drifted
+kit files by default -- repositories that intentionally
+customize kit files must pass `--skip-existing`, which
+preserves all existing kit files while still creating
+missing ones. In this repo, the `.opencode/` copies are
+synced by running `replicator init` in the repo root
+(dogfood task 4.2 in `openspec/changes/init-smart-sync/`).
 
 Run `make check` to confirm drift detection tests pass.
 
@@ -530,8 +544,11 @@ above, verify the corresponding copy is updated. If only
 one copy is changed, the drift detection tests will fail
 in CI (`make check`) for the three skills currently
 covered (see Test Coverage above). For the remaining
-pairs, manual verification during review is the only
-safeguard until issue #70 expands test coverage.
+pairs, run `replicator init` (or the drift tests) instead
+of manual byte comparison -- smart-sync updates drifted
+copies to the embedded content; commit the synced files.
+Issue #70 tracks expanding test coverage to all 15
+mirrored pairs.
 
 ## Credits
 
