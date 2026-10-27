@@ -62,7 +62,8 @@ that intentionally customize kit files.
 The `--force` flag MUST remain registered for backward compatibility
 but MUST NOT change scaffold behavior (smart-sync is the default);
 the flag MUST be marked deprecated via the CLI framework so users are
-informed.
+informed. In any flag combination, `--skip-existing` takes precedence
+over the default smart-sync, and `--force` never overrides it.
 
 #### Scenario: Force is a no-op
 
@@ -71,6 +72,14 @@ informed.
 - **WHEN** `replicator init --force` runs
 - **THEN** the file is updated to embedded content (same as the
   default smart-sync behavior) and a deprecation notice is emitted
+
+#### Scenario: Combined flags — skip-existing wins
+
+- **GIVEN** a target directory where an agent kit file exists with
+  customized content
+- **WHEN** `replicator init --force --skip-existing` runs
+- **THEN** the file is preserved (the `--skip-existing` opt-out takes
+  precedence) and the `--force` deprecation notice is still emitted
 
 ### Requirement: Updated Action Reporting
 

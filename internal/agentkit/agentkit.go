@@ -5,6 +5,7 @@
 package agentkit
 
 import (
+	"bytes"
 	"embed"
 	"errors"
 	"fmt"
@@ -19,8 +20,14 @@ var content embed.FS
 
 // ScaffoldResult describes the outcome of writing a single agent kit file.
 type ScaffoldResult struct {
-	Path   string `json:"path"`
-	Action string `json:"action"` // "created", "skipped", "overwritten"
+	Path string `json:"path"`
+	// Action reports the outcome for the file: "created" when the file
+	// was written because it did not exist, "skipped" when an existing
+	// file was left untouched, or "updated" when a drifted file was
+	// rewritten with the embedded content. ScaffoldDCP additionally
+	// reports "overwritten" when it replaces a DCP config that lacks
+	// protectTags.
+	Action string `json:"action"`
 }
 
 // dcpConfigContent is the canonical DCP config that enables protectTags.
@@ -87,10 +94,31 @@ func ScaffoldDCP(targetDir string) (ScaffoldResult, error) {
 	return ScaffoldResult{Path: "dcp.jsonc", Action: "created"}, nil
 }
 
+// ScaffoldMode selects how Scaffold treats existing agent kit files.
+type ScaffoldMode string
+
+const (
+	// ScaffoldModeSync converges kit files to the embedded content:
+	// byte-identical files are skipped, drifted files are rewritten.
+	ScaffoldModeSync ScaffoldMode = "sync"
+	// ScaffoldModeSkipExisting preserves every existing kit file
+	// regardless of content drift; only missing files are created.
+	ScaffoldModeSkipExisting ScaffoldMode = "skip-existing"
+)
+
 // Scaffold writes the embedded agent kit files to targetDir/.opencode/.
-// If force is false, existing files are skipped. If force is true,
-// existing files are overwritten.
-func Scaffold(targetDir string, force bool) ([]ScaffoldResult, error) {
+//
+// The mode determines how existing files are treated:
+//
+//   - ScaffoldModeSync (smart-sync): the embedded content is canonical.
+//     Missing files are created, byte-identical files are skipped, and
+//     drifted files are rewritten with the embedded content and reported
+//     as "updated".
+//   - ScaffoldModeSkipExisting: every existing file is preserved
+//     regardless of content drift; only missing files are created.
+//
+// Each ScaffoldResult.Action reports "created", "skipped", or "updated".
+func Scaffold(targetDir string, mode ScaffoldMode) ([]ScaffoldResult, error) {
 	var results []ScaffoldResult
 
 	err := fs.WalkDir(content, "content", func(path string, d fs.DirEntry, err error) error {
@@ -105,13 +133,30 @@ func Scaffold(targetDir string, force bool) ([]ScaffoldResult, error) {
 		relPath, _ := filepath.Rel("content", path)
 		destPath := filepath.Join(targetDir, ".opencode", relPath)
 
+		// Read the embedded content up front: it is canonical for both
+		// the byte comparison and any write.
+		data, readErr := content.ReadFile(path)
+		if readErr != nil {
+			return fmt.Errorf("read embedded %s: %w", path, readErr)
+		}
+
 		// Check if file exists.
 		if _, statErr := os.Stat(destPath); statErr == nil {
-			if !force {
+			if mode == ScaffoldModeSkipExisting {
 				results = append(results, ScaffoldResult{Path: relPath, Action: "skipped"})
 				return nil
 			}
-			results = append(results, ScaffoldResult{Path: relPath, Action: "overwritten"})
+			// Smart-sync: rewrite only when on-disk bytes differ from
+			// the embedded content.
+			destData, destReadErr := os.ReadFile(destPath)
+			if destReadErr != nil {
+				return fmt.Errorf("read %s: %w", relPath, destReadErr)
+			}
+			if bytes.Equal(destData, data) {
+				results = append(results, ScaffoldResult{Path: relPath, Action: "skipped"})
+				return nil
+			}
+			results = append(results, ScaffoldResult{Path: relPath, Action: "updated"})
 		} else if !errors.Is(statErr, os.ErrNotExist) {
 			return fmt.Errorf("stat %s: %w", relPath, statErr)
 		} else {
@@ -121,12 +166,6 @@ func Scaffold(targetDir string, force bool) ([]ScaffoldResult, error) {
 		// Create parent directories.
 		if mkErr := os.MkdirAll(filepath.Dir(destPath), 0o755); mkErr != nil {
 			return fmt.Errorf("create directory for %s: %w", relPath, mkErr)
-		}
-
-		// Read from embedded FS and write to disk.
-		data, readErr := content.ReadFile(path)
-		if readErr != nil {
-			return fmt.Errorf("read embedded %s: %w", path, readErr)
 		}
 
 		// #nosec G306 -- scaffolded agent-kit assets are intentionally user-readable.

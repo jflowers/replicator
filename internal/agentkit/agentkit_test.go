@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // findRepoRoot walks up from the current working directory to find the
@@ -28,9 +29,20 @@ func findRepoRoot(t *testing.T) string {
 	}
 }
 
+// findScaffoldResult returns the ScaffoldResult whose Path equals relPath
+// and whether such a result was present.
+func findScaffoldResult(results []ScaffoldResult, relPath string) (ScaffoldResult, bool) {
+	for _, r := range results {
+		if r.Path == relPath {
+			return r, true
+		}
+	}
+	return ScaffoldResult{}, false
+}
+
 func TestScaffold_FreshDirectory(t *testing.T) {
 	dir := t.TempDir()
-	results, err := Scaffold(dir, false)
+	results, err := Scaffold(dir, ScaffoldModeSync)
 	if err != nil {
 		t.Fatalf("Scaffold: %v", err)
 	}
@@ -76,92 +88,147 @@ func TestScaffold_FreshDirectory(t *testing.T) {
 	}
 }
 
-func TestScaffold_SkipsExisting(t *testing.T) {
+func TestScaffold_SmartSyncUpdatesDriftedFile(t *testing.T) {
 	dir := t.TempDir()
 
-	// Pre-create a file that Scaffold would write.
+	// Pre-create a kit file whose bytes differ from the embedded content.
 	forgePath := filepath.Join(dir, ".opencode", "commands", "forge.md")
 	if err := os.MkdirAll(filepath.Dir(forgePath), 0o755); err != nil {
 		t.Fatalf("setup MkdirAll: %v", err)
 	}
-	original := []byte("# custom content\n")
-	if err := os.WriteFile(forgePath, original, 0o600); err != nil {
+	drifted := []byte("# locally customized content\n")
+	if err := os.WriteFile(forgePath, drifted, 0o600); err != nil {
 		t.Fatalf("setup WriteFile: %v", err)
 	}
 
-	results, err := Scaffold(dir, false)
+	results, err := Scaffold(dir, ScaffoldModeSync)
 	if err != nil {
 		t.Fatalf("Scaffold: %v", err)
 	}
 
-	// Find the forge.md result — should be "skipped".
-	var found bool
-	for _, r := range results {
-		if r.Path == filepath.Join("commands", "forge.md") {
-			found = true
-			if r.Action != "skipped" {
-				t.Errorf("forge.md action = %q, want %q", r.Action, "skipped")
-			}
-		}
+	// Sync mode converges drifted files to the embedded (canonical)
+	// content, so the result action must be "updated".
+	r, ok := findScaffoldResult(results, filepath.Join("commands", "forge.md"))
+	if !ok {
+		t.Fatal("forge.md not found in results")
 	}
-	if !found {
-		t.Error("forge.md not found in results")
+	if r.Action != "updated" {
+		t.Errorf("forge.md action = %q, want %q", r.Action, "updated")
 	}
 
-	// Verify file content was NOT overwritten.
+	// Verify the drifted file was rewritten with the embedded content.
+	embedded, err := content.ReadFile("content/commands/forge.md")
+	if err != nil {
+		t.Fatalf("read embedded forge.md: %v", err)
+	}
 	data, err := os.ReadFile(forgePath)
 	if err != nil {
 		t.Fatalf("read forge.md after scaffold: %v", err)
 	}
-	if string(data) != string(original) {
-		t.Errorf("forge.md was overwritten: got %q", string(data))
+	if string(data) != string(embedded) {
+		t.Errorf("forge.md content does not match embedded content: got %d bytes, want %d bytes", len(data), len(embedded))
 	}
 }
 
-func TestScaffold_ForceOverwrites(t *testing.T) {
+func TestScaffold_SmartSyncSkipsIdenticalFile(t *testing.T) {
 	dir := t.TempDir()
 
-	// Pre-create a file that Scaffold would write.
+	// Pre-create a kit file byte-identical to the embedded content.
+	embedded, err := content.ReadFile("content/commands/forge.md")
+	if err != nil {
+		t.Fatalf("read embedded forge.md: %v", err)
+	}
 	forgePath := filepath.Join(dir, ".opencode", "commands", "forge.md")
 	if err := os.MkdirAll(filepath.Dir(forgePath), 0o755); err != nil {
 		t.Fatalf("setup MkdirAll: %v", err)
 	}
-	original := []byte("# custom content\n")
-	if err := os.WriteFile(forgePath, original, 0o600); err != nil {
+	if err := os.WriteFile(forgePath, embedded, 0o600); err != nil {
 		t.Fatalf("setup WriteFile: %v", err)
 	}
 
-	results, err := Scaffold(dir, true)
+	// Pin the modification time to a known past value so a rewrite is
+	// detectable: rewriting refreshes mtime, a true skip leaves it alone.
+	pinned := time.Unix(1000000000, 0)
+	if err := os.Chtimes(forgePath, pinned, pinned); err != nil {
+		t.Fatalf("setup Chtimes: %v", err)
+	}
+	before, err := os.Stat(forgePath)
+	if err != nil {
+		t.Fatalf("setup Stat: %v", err)
+	}
+
+	results, err := Scaffold(dir, ScaffoldModeSync)
 	if err != nil {
 		t.Fatalf("Scaffold: %v", err)
 	}
 
-	// Find the forge.md result — should be "overwritten".
-	for _, r := range results {
-		if r.Path == filepath.Join("commands", "forge.md") {
-			if r.Action != "overwritten" {
-				t.Errorf("forge.md action = %q, want %q", r.Action, "overwritten")
-			}
-		}
+	// Identical files are not rewritten in sync mode.
+	r, ok := findScaffoldResult(results, filepath.Join("commands", "forge.md"))
+	if !ok {
+		t.Fatal("forge.md not found in results")
+	}
+	if r.Action != "skipped" {
+		t.Errorf("forge.md action = %q, want %q", r.Action, "skipped")
 	}
 
-	// Verify file content WAS overwritten with expected embedded content.
+	after, err := os.Stat(forgePath)
+	if err != nil {
+		t.Fatalf("stat forge.md after scaffold: %v", err)
+	}
+	if !after.ModTime().Equal(before.ModTime()) {
+		t.Errorf("forge.md was rewritten despite being identical: mtime changed from %v to %v", before.ModTime(), after.ModTime())
+	}
+
+	// Content must still equal the embedded bytes.
 	data, err := os.ReadFile(forgePath)
 	if err != nil {
-		t.Fatalf("read forge.md after force scaffold: %v", err)
+		t.Fatalf("read forge.md after scaffold: %v", err)
 	}
-	expected, err := content.ReadFile("content/commands/forge.md")
+	if string(data) != string(embedded) {
+		t.Error("forge.md content diverged from embedded content")
+	}
+}
+
+func TestScaffold_SkipExistingModePreservesDriftedFile(t *testing.T) {
+	dir := t.TempDir()
+
+	// Pre-create a kit file with locally customized (drifted) bytes.
+	forgePath := filepath.Join(dir, ".opencode", "commands", "forge.md")
+	if err := os.MkdirAll(filepath.Dir(forgePath), 0o755); err != nil {
+		t.Fatalf("setup MkdirAll: %v", err)
+	}
+	custom := []byte("# locally customized content\n")
+	if err := os.WriteFile(forgePath, custom, 0o600); err != nil {
+		t.Fatalf("setup WriteFile: %v", err)
+	}
+
+	results, err := Scaffold(dir, ScaffoldModeSkipExisting)
 	if err != nil {
-		t.Fatalf("read embedded forge.md: %v", err)
+		t.Fatalf("Scaffold: %v", err)
 	}
-	if string(data) != string(expected) {
-		t.Errorf("forge.md content after force overwrite doesn't match embedded content:\n  got length %d, want length %d", len(data), len(expected))
+
+	// Skip-existing mode preserves existing files regardless of drift.
+	r, ok := findScaffoldResult(results, filepath.Join("commands", "forge.md"))
+	if !ok {
+		t.Fatal("forge.md not found in results")
+	}
+	if r.Action != "skipped" {
+		t.Errorf("forge.md action = %q, want %q", r.Action, "skipped")
+	}
+
+	// The customized content must survive untouched.
+	data, err := os.ReadFile(forgePath)
+	if err != nil {
+		t.Fatalf("read forge.md after scaffold: %v", err)
+	}
+	if string(data) != string(custom) {
+		t.Errorf("forge.md content was modified in skip-existing mode: got %q, want %q", string(data), string(custom))
 	}
 }
 
 func TestScaffold_FileCount(t *testing.T) {
 	dir := t.TempDir()
-	results, err := Scaffold(dir, false)
+	results, err := Scaffold(dir, ScaffoldModeSync)
 	if err != nil {
 		t.Fatalf("Scaffold: %v", err)
 	}

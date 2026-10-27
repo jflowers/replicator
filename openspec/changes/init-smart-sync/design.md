@@ -6,8 +6,10 @@
 `content/` FS and writes each file to `.opencode/`. Today, any
 existing destination file is skipped unless `force` is true. The
 embedded kit evolves with the binary, but re-running `init` never
-repairs stale copies, so drift accumulates silently (6 of 15
-mirrored pairs are currently drifted in this repo). Constitution
+repairs stale copies, so drift accumulates silently (currently 1 of
+15 mirrored pairs is drifted in this repo — the always-on-guidance
+skill, which `TestSkillFiles_DriftDetection` already flags at HEAD).
+Constitution
 alignment is documented in `proposal.md` (all four principles PASS);
 the decisions below preserve that alignment.
 
@@ -23,18 +25,27 @@ the decisions below preserve that alignment.
 - Keep `--force` accepted (deprecated no-op) so existing scripts do
   not break.
 - Make drift repair observable via a new `"updated"` action.
-- Dogfood: use the new behavior to fix this repo's own 6-file drift.
+- Dogfood: use the new behavior to fix this repo's own 1-file drift
+  (always-on-guidance) plus the `replicator-cli` mirror updated by
+  task 3.2.
 
 ### Non-Goals
 
 - Changing `ScaffoldDCP` logic (already smart: create / skip-if-
   `protectTags` / overwrite).
+- File-set convergence — smart-sync never deletes `.opencode/` kit
+  files that are absent from the embedded content (orphaned
+  scaffolded files are left in place); convergence is content-only
+  for the paths the embedded kit contains.
 - Changing `cells.json` handling (user state, always skipped).
 - Provenance tracking of who modified a kit file (no hashes-of-old-
   versions registry).
 - Backup files (`.bak`) for overwritten kit files.
 - Expanding drift-detection test coverage to all 15 mirrored pairs
   (tracked separately as issue #70).
+- Automated coordination with UF CLI scaffolding over the shared
+  `.opencode/` paths — the ownership boundary is documented as a
+  design decision (D8), not enforced.
 - MCP tool surface changes — `init` is CLI-only, so no TypeScript
   parity fixtures are affected.
 
@@ -69,9 +80,24 @@ the decisions below preserve that alignment.
   logic untouched (see Non-Goals).
 - **D7 — Dogfood remediation as a task**: after implementation, a
   task rebuilds the binary (`make install`) and runs the new
-  `replicator init` at the repo root to sync the 6 drifted files,
-  then re-runs `make check`. This validates the feature on the
-  exact drift that motivated it.
+  `replicator init` at the repo root to sync the 1 pre-existing
+  drifted file (always-on-guidance) plus the `replicator-cli` mirror
+  (drifted by task 3.2's embedded-content update), then re-runs
+  `make check`. This validates the feature on the exact drift that
+  motivated it.
+- **D8 — Path-ownership boundary with UF CLI scaffolding**:
+  `replicator init` writes only the 15 mirrored kit paths backed by
+  `internal/agentkit/content/`; the embedded side is
+  replicator-only, but the `.opencode/` side of those pairs is
+  shared — the UF CLI also scaffolds it and may regenerate copies
+  on uf version bumps (the current always-on-guidance drift is
+  exactly such a newer UF-scaffold generation). Embedded replicator
+  content stays canonical for these paths; newer UF-scaffold content
+  on a shared path is preserved by reconciling it into the embedded
+  copy (task 3.4's merge pattern) before syncing, never by silent
+  overwrite. `--skip-existing` is the opt-out for repos that want
+  uf-managed content to win. Automated coordination between the two
+  tools is a Non-Goal.
 
 ## Risks / Trade-offs
 

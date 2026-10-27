@@ -7,10 +7,11 @@
 content evolves (a new binary release) never updates stale scaffolded
 files — drift accumulates silently between `.opencode/` and
 `internal/agentkit/content/`. The replicator repo itself currently has
-6 of 15 mirrored pairs drifted (missing `<protect>` tags in four
-commands, missing delegation-contract updates in two agents), and CI
-cannot catch it because drift-detection tests only cover 2 skills plus
-1 structural check (issue #70).
+1 of 15 mirrored pairs drifted: `.opencode/skills/always-on-guidance/SKILL.md`
+(65-line pre-hardening on-disk copy vs the 71-line hardened embedded copy).
+That pair is covered by `TestSkillFiles_DriftDetection`, so CI already
+catches it (the test fails on the current tree); the wider gap is that
+12 of 15 pairs lack drift coverage entirely (issue #70).
 
 The skip-by-default design was chosen to protect user-customized kit
 files, but it makes the common case (stale kit, unmodified locally)
@@ -35,8 +36,9 @@ is rebuilt.
 - `ScaffoldDCP` and `cells.json` handling are unchanged (DCP config
   is already smart; `cells.json` is user state).
 - Replicate repo dogfood: rebuild binary and run the new
-  `replicator init` to sync the 6 drifted `.opencode/` files, proving
-  the feature end-to-end.
+  `replicator init` to sync the 1 drifted `.opencode/` file plus the
+  updated `replicator-cli` skill mirror, proving the feature
+  end-to-end.
 
 ## Capabilities
 
@@ -64,12 +66,19 @@ is rebuilt.
   `--skip-existing` flag, `"updated"` output styling, help text.
 - `cmd/replicator/init_test.go` — rewritten skip/force tests, new
   smart-sync and flag tests.
-- `.opencode/` (6 drifted files) — synced to embedded content via
-  the new smart-sync run.
+- `.opencode/` (1 drifted file, always-on-guidance, plus the
+  `replicator-cli` mirror after task 3.2 updates its embedded copy) —
+  synced to embedded content via the new smart-sync run.
 - `CHANGELOG.md`, `README.md` (if it documents skip behavior),
-  embedded `replicator-cli` skill (documents `--force`).
-- Website: user-facing `init` behavior change requires a
-  `unbound-force/website` issue before merge.
+  embedded `replicator-cli` skill (documents `--force`), `AGENTS.md`
+  (Drift Detection section: smart-sync repair path, overwrite-by-default
+  warning, updated review guidance).
+- Website: user-facing `init` behavior change requires two
+  `unbound-force/website` issues before merge — a documentation
+  issue per the Website Documentation Gate and a blog-labeled
+  issue covering the migration story for existing users
+  (default flip, `--skip-existing` opt-out, preserving
+  intentional customizations; precedent issue #51).
 
 ## Constitution Alignment
 
@@ -109,3 +118,11 @@ All new behavior is testable in isolation with `t.TempDir()` and
 in-memory embedded content — no external services, no network, no
 database. Existing test conventions (stdlib `testing`, no testify)
 are followed.
+
+Coverage strategy: the new smart-sync branches (updated /
+skip-existing / identical-skip) are exercised by the new unit tests
+in `internal/agentkit` and `cmd/replicator`; the existing per-package
+coverage ratchets (including `internal/agentkit` at 80%) apply
+unchanged, and tasks 4.1/4.3 enforce the full CI-equivalent check
+set (`go vet`, `govulncheck`, `go test ./... -count=1 -race`,
+coverage ratchets, build) derived via the pre-flight skill.
