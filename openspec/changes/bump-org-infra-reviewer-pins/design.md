@@ -98,12 +98,15 @@ Failed dependency scans now block auto-approval. This is the intended
 fail-closed behaviour; the trade-off is additional manual review for
 genuinely failing scans, which is preferable to masking failures.
 
-### R2: Latent shared-constant coupling
+### R2: Shared constant is an intentional lockstep invariant
 
-One constant still serves two independently versioned references, so a
-future single-reference bump re-breaks the test. Accepted and scoped out;
-task 3.5 records a follow-up tracking issue to split the constants per
-reference.
+One constant asserts both references. This is deliberate: it forces the two
+org-infra reviewer pins to move together, so the deps reviewer and the
+Dependabot reviewer cannot drift onto different org-infra versions. A
+future single-reference bump fails the test by design, prompting a lockstep
+bump. Splitting into per-reference constants is explicitly not planned,
+because independent per-reference pins would reintroduce version-drift
+risk.
 
 ### R3: Upstream tag drift or retargeting
 

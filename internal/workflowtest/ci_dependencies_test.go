@@ -16,7 +16,7 @@ import (
 
 const (
 	dependabotAuthor  = "dependabot[bot]"
-	orgInfraSHA       = "bd3718a218d649b093269fe4a979c4a4632dfad2"
+	orgInfraSHA       = "8f347ba1aa2c7e9eb3b70e69c1709ddb456cd64a"
 	approvalScriptSHA = "3a2844b7e9c422d3c10d287c895573f7108da1b3"
 	minimumReleaseAge = "24"
 	minimumSHAPins    = 4
