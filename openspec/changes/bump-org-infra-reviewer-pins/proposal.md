@@ -43,9 +43,11 @@ intact. Pinned action SHAs are a protected gate value (AGENTS.md
 Gatekeeping Value Protection item 4); they MUST NOT be weakened, loosened,
 or regex-relaxed to green the test.
 
-**Out of scope**: other org-infra references in `ci_checks.yml:34` and
-`release.yml:47,63` remain on v0.8.0. They are not asserted by
-`orgInfraSHA` and can be bumped separately.
+**Out of scope (non-normative)**: other org-infra references in
+`ci_checks.yml:34` and `release.yml:47,63` remain on v0.8.0 and can be
+bumped separately. They are not asserted by `orgInfraSHA`. This is an
+informational boundary, not a requirement that those files must stay on
+v0.8.0.
 
 ## Capabilities
 
@@ -53,12 +55,16 @@ or regex-relaxed to green the test.
 - None.
 
 ### Modified Capabilities
-- `ci-dependencies`: the `Dependencies` workflow now calls both org-infra
-  reviewer reusable workflows at v0.9.0. The deps reviewer's v0.9.0 change
-  to `REVIEW_CONCLUSION` (from `steps.dependency_review.conclusion` to
-  `.outcome`, on a `continue-on-error: true` step) means a failed
-  dependency scan now reports `failure` instead of the previously masked
-  `success`.
+- `dependency-review-automation`: refines the existing "Organization
+  Dependency Review" pin contract so both org-infra reviewer references are
+  pinned to the same v0.9.0 SHA, with explicit CI-001 (pin), CI-002
+  (authoring-time re-derivation), and CI-003 (version comment) citations.
+  The base spec for this capability currently lives under
+  `openspec/changes/automate-dependency-update/` and is not yet synced into
+  `openspec/specs/`, so `openspec validate` refuses a MODIFIED delta; this
+  change therefore adds the refined requirement under the same capability
+  namespace. Once the predecessor is archived, this delta merges into
+  `dependency-review-automation` rather than a parallel capability.
 
 ### Removed Capabilities
 - None.
@@ -76,9 +82,11 @@ or regex-relaxed to green the test.
   the new shared SHA. Existing consumer-fixture tests (e.g. the
   unsuccessful-review-conclusion case) already cover the fail-closed
   reporting path, so no new consumer test is required.
-- **Docs**: the behaviour change is noted in the PR description. No website
-  documentation issue is required (CI/CD pipeline change is exempt from the
-  Website Documentation Gate).
+- **Docs**: the fail-closed scan-failure behaviour is recorded in the
+  established in-repo record `docs/ci-workflow-security.md` (the durable
+  home for this workflow's approval gating), and summarised in the PR
+  description. No website documentation issue is required (CI/CD pipeline
+  change is exempt from the Website Documentation Gate).
 
 ## Constitution Alignment
 
