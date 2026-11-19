@@ -22,6 +22,12 @@ path only.
   execute pull-request repository code.
 - **Action integrity:** Every `uses:` reference is pinned to a full commit
   SHA, including both reusable workflows and the two step actions.
+- **Failed-scan gate:** the general dependency reviewer reports its review
+  conclusion from the scan step's `outcome`. With the v0.9.0 reviewer, a
+  failed dependency scan surfaces as `failure` instead of being masked as
+  `success`, so the approval job's `review_conclusion == 'success'` gate
+  halts Dependabot auto-approval and the pull request requires manual
+  review (fail-closed).
 
 Untrusted pull-request code cannot execute with privileged credentials in this
 workflow: it is never checked out, default permissions are read-only, and the
