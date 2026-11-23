@@ -407,6 +407,44 @@ implementation begins.
 - **Code review**: Required before merge.
 - **Semantic versioning**: For releases.
 
+## Release Pipeline
+
+Releases run through the shared reusable workflow in
+[`jflowers/ship`](https://github.com/jflowers/ship)
+(`.github/workflows/go-release.yml`), the same one dewey,
+gaze and the other Go tools use. `.github/workflows/release.yml`
+only calls it (`workflow_dispatch` with a `tag` input, e.g.
+`gh workflow run release.yml -f tag=v1.2.3`). Ship runs:
+
+1. `settings`: signing needs all six `MACOS_*` secrets or
+   none; a partial set fails before anything is tagged.
+2. `preflight` (`complytime/org-infra`): semver (pre-release
+   suffixes allowed), tag uniqueness, CI on HEAD
+   (`Build and Test`, `Standardized CI / Run linters`),
+   unreleased commits, then the annotated tag.
+3. `release` (`complytime/org-infra` GoReleaser): binaries,
+   GitHub Release, cosign signatures, SBOMs.
+4. `sign-macos`: Developer ID signing and notarization of the
+   darwin archives, re-uploaded with `checksums.txt` rewritten.
+5. The cask job: every sha256 from the final `checksums.txt`,
+   `brew audit`, then a push to `unbound-force/homebrew-tap`.
+
+Rules for agents and reviewers:
+
+- **Keep the delegation.** Using `jflowers/ship`, a personal
+  account, is a deliberate maintainer decision (#181). Don't
+  move the pipeline back in-repo or flag the delegation as a
+  finding; a change to this decision needs a new issue from a
+  maintainer.
+- **Pin by SHA.** Pin ship by full commit SHA with its
+  version comment. When bumping, confirm the tag resolves
+  (annotated tags dereferenced) to that commit.
+- **Map secrets by name.** `secrets: inherit` doesn't reach
+  a workflow in another owner's repo, so map every secret by
+  name.
+- **Fix the pipeline in ship.** Fix release-pipeline bugs in
+  ship, not here, then bump the pin.
+
 ## Commands
 
 ```bash

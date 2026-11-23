@@ -59,10 +59,12 @@ homebrew_casks:
     skip_upload: true
     # custom_block: native postflight_steps not yet supported by GoReleaser DSL;
     # migrate when available (tracking: goreleaser/goreleaser#6873)
+    # Homebrew 7's postflight_steps needs a literal {{staged_path}} ("#{...}"
+    # makes the cask unreadable); the backticks stop GoReleaser templating it.
     custom_block: |
       postflight_steps do
         on_macos do
-          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/replicator"]
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ `{{staged_path}}` }}/replicator"]
         end
       end
     repository:

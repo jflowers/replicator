@@ -166,8 +166,15 @@ assert_current_postflight_dsl() {
   if grep -Eq '^[[:space:]]*postflight[[:space:]]+do' "$cask"; then
     fail "$source: cask contains legacy 'postflight do' (should be 'postflight_steps do')"
   fi
-  grep -q '#{staged_path}' "$cask" || \
-    fail "$source: cask is missing Ruby interpolation '#{staged_path}'"
+  # postflight_steps takes a literal {{staged_path}} placeholder; Ruby
+  # interpolation there makes Homebrew 7 reject the whole cask as
+  # unreadable. (In .goreleaser.yaml it is escaped as
+  # {{ `{{staged_path}}` }}, which contains the same text.)
+  grep -qF '{{staged_path}}' "$cask" || \
+    fail "$source: cask is missing the postflight_steps placeholder '{{staged_path}}'"
+  if grep -qF '#{staged_path}' "$cask"; then
+    fail "$source: cask uses Ruby interpolation '#{staged_path}', which Homebrew 7 can't read in postflight_steps"
+  fi
 }
 
 CONFIG_CASK="$WORK/custom-block.rb"
