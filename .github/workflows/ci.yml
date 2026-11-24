@@ -34,12 +34,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 0
+          # On pull_request the checkout is refs/pull/N/merge; depth 2
+          # fetches the merge commit and both of its parents.
+          fetch-depth: 2
 
       - name: Detect code changes
         id: detect
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           # Pushes to main always run full CI (CLS-FR-001).
@@ -49,9 +50,22 @@ jobs:
             exit 0
           fi
 
-          # Fail closed: a failed diff fails the job rather than guessing.
-          if ! CHANGED_FILES="$(git diff --name-only --no-renames "$BASE_SHA...$HEAD_SHA")"; then
-            echo "::error::git diff against the pull request base failed — failing closed (CLS-FR-001)"
+          # HEAD is GitHub's merge of the PR head (HEAD^2) into the current
+          # main (HEAD^1), so HEAD^1..HEAD is exactly what merging the PR
+          # would change on main today. Unlike a diff against the event's
+          # base SHA, it does not count main's own changes when
+          # base.sha is older than the main merged into the branch.
+          # Fail closed: anything unexpected fails the job rather than guessing.
+          if ! PR_PARENT="$(git rev-parse --verify --quiet 'HEAD^2^{commit}')"; then
+            echo "::error::HEAD is not the pull request merge commit — failing closed (CLS-FR-001)"
+            exit 1
+          fi
+          if [ "$PR_PARENT" != "$HEAD_SHA" ]; then
+            echo "::error::merge commit's second parent $PR_PARENT is not the PR head $HEAD_SHA — failing closed (CLS-FR-001)"
+            exit 1
+          fi
+          if ! CHANGED_FILES="$(git diff --name-only --no-renames 'HEAD^1' HEAD)"; then
+            echo "::error::git diff of the pull request merge commit failed — failing closed (CLS-FR-001)"
             exit 1
           fi
 

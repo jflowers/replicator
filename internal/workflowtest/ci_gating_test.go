@@ -28,6 +28,8 @@ func TestCIGatingWorkflows_StructureEnforcesLearningsSkip(t *testing.T) {
 				t.Errorf("changes job outputs = %v, want exactly [code]", keys)
 			}
 
+			assertDetectionLogic(t, changesJob)
+
 			gatedJob := yamlSection(t, workflow, fixture.gatedJobID, 2)
 			assertNeeds(t, gatedJob, fixture.gatedJobID, []string{"changes"})
 			assertMatches(t, gatedJob, `(?m)^\s+if:\s*needs\.changes\.outputs\.code\s*==\s*['"]true['"]\s*$`, "learnings gating condition")
@@ -47,6 +49,24 @@ func TestCIGatingWorkflows_StructureEnforcesLearningsSkip(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// assertDetectionLogic pins the parts of the changes job that keep the
+// skip safe (CLS-FR-001): push short-circuit, a rename-proof diff of the
+// PR merge commit against its first parent (so a stale
+// pull_request.base.sha cannot count main's own changes), the exact
+// learnings prefix, and failing closed.
+func assertDetectionLogic(t *testing.T, changesJob string) {
+	t.Helper()
+	assertMatches(t, changesJob, `(?m)^\s+fetch-depth:\s*2\s*$`, "merge commit and both parents fetched")
+	assertMatches(t, changesJob, `if \[ "\$GITHUB_EVENT_NAME" = "push" \]; then\s+echo "[^"]*"\s+echo "code=true" >> "\$GITHUB_OUTPUT"\s+exit 0`, "push short-circuit to code=true")
+	assertMatches(t, changesJob, `git rev-parse --verify --quiet 'HEAD\^2\^\{commit\}'\)"; then\s+echo "[^"]*"\s+exit 1`, "fail closed when HEAD is not a merge commit")
+	assertMatches(t, changesJob, `if \[ "\$PR_PARENT" != "\$HEAD_SHA" \]; then\s+echo "[^"]*"\s+exit 1`, "fail closed when the merge commit is not for the PR head")
+	assertMatches(t, changesJob, `git diff --name-only --no-renames 'HEAD\^1' HEAD\)"; then\s+echo "[^"]*"\s+exit 1`, "rename-proof first-parent diff that fails closed")
+	assertMatches(t, changesJob, `(?m)^\s+""\|\.uf/dewey/learnings/\*\) ;;$`, "exact learnings prefix")
+	if strings.Contains(changesJob, "pull_request.base.sha") {
+		t.Error("changes job must not diff against pull_request.base.sha: it can be older than the main merged into the PR")
 	}
 }
 

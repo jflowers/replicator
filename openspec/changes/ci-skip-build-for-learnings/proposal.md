@@ -29,16 +29,19 @@ Fixes: https://github.com/unbound-force/replicator/issues/182
 
 1. **Change detection job**: Add a cheap `changes` job to
    `.github/workflows/ci.yml`.
-   On `pull_request` events it runs
-   `git diff --name-only --no-renames "$BASE_SHA...$HEAD_SHA"` (base
-   and head SHAs supplied through the step's `env:` block, never
-   interpolated into `run:`, matching the repo's zizmor posture) and
+   On `pull_request` events it diffs GitHub's PR merge commit against
+   its first parent, `git diff --name-only --no-renames 'HEAD^1' HEAD`
+   -- what merging the PR would change on the current `main`, so a
+   stale event base SHA cannot count `main`'s own changes. It first
+   checks that the merge commit's second parent is the PR head
+   (supplied through the step's `env:` block, never interpolated into
+   `run:`, matching the repo's zizmor posture), and
    sets output `code` to `'true'` when any changed file is outside
    `.uf/dewey/learnings/`, `'false'` otherwise. `--no-renames` makes a
    file moved into `.uf/dewey/learnings/` still count its source path
    as a change outside learnings. On `push` events to `main` it sets
-   `code` to `'true'` unconditionally. Detection fails closed: any
-   diff error fails the job.
+   `code` to `'true'` unconditionally. Detection fails closed: an
+   unexpected checkout or a diff error fails the job.
 
 2. **Gated build and test**: `build-and-test` (ci.yml) gets
    `needs: [changes]` and `if: needs.changes.outputs.code == 'true'`.

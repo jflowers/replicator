@@ -78,15 +78,27 @@ check, but the aggregate in D5 carries the guarantee regardless.
 
 The `changes` job uses the already-pinned
 `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1`
-(v7.0.1) with `fetch-depth: 0` and
+(v7.0.1) with `fetch-depth: 2`. On `pull_request` the checkout
+is `refs/pull/N/merge`, GitHub's merge of the PR head into the
+current `main`; depth 2 fetches it and both parents. The job runs
 
-    git diff --name-only --no-renames "$BASE_SHA...$HEAD_SHA"
+    git diff --name-only --no-renames 'HEAD^1' HEAD
 
-where `BASE_SHA` is `github.event.pull_request.base.sha` and
-`HEAD_SHA` is `github.event.pull_request.head.sha`, both supplied
-through the step's `env:` block rather than interpolated into
-`run:` (event-context template injection is a zizmor finding; cf.
-`ci_dependencies.yml`'s env indirection). Any line
+after confirming that `HEAD^2` is the PR head
+(`github.event.pull_request.head.sha`, supplied through the step's
+`env:` block rather than interpolated into `run:` --
+event-context template injection is a zizmor finding; cf.
+`ci_dependencies.yml`'s env indirection). Diffing the merge
+commit against its first parent lists exactly what merging the PR
+would change on today's `main`.
+
+An earlier draft used a three-dot diff against
+`github.event.pull_request.base.sha`. That SHA can be older than
+the `main` merged into the branch by "Update branch", and then the
+merge base is the old base: every change `main` gained since is
+counted against the PR, so a learnings PR in the strict-mode merge
+train runs full CI anyway. The first-parent diff does not depend
+on `base.sha`. Any line
 lacking the `.uf/dewey/learnings/` prefix sets `code: 'true'`.
 `--no-renames` disables rename detection: without it,
 `--name-only` lists only a rename's new path, so a file moved into
@@ -94,9 +106,8 @@ lacking the `.uf/dewey/learnings/` prefix sets `code: 'true'`.
 outside learnings -- fail-open for exactly the PRs the gate must
 catch. This avoids adding `dorny/paths-filter` -- a new third-party
 action to pin and vet -- for a diff the runner can do with git.
-The three-dot diff uses the merge base, so files changed on
-`main` after the PR forked (already validated by main's own CI)
-are not counted against the PR.
+Files changed on `main` (already validated by main's own CI) are
+never counted against the PR.
 
 ### D3. Push to `main` outputs `code: 'true'` unconditionally
 
@@ -230,10 +241,10 @@ are `openspec validate` (task 5.3), the constitution check
   scanners -- minutes, not the ~30 of the Go job. Accepted:
   secret scanning on content written from session transcripts is
   worth the wait.
-- **Stale base SHA.** `github.event.pull_request.base.sha` is
-  the base at event time; the merge-base semantics of the
-  three-dot diff (D2) keep the result correct for the question
-  being asked -- did this PR change anything outside learnings.
+- **Stale base SHA.** `github.event.pull_request.base.sha` can
+  predate the `main` merged into the branch. Avoided: detection
+  diffs the merge commit against its first parent (D2) and never
+  reads `base.sha`; the regression test (D7) forbids it.
 - **Extra jobs on every run.** One cheap detection job and one
   aggregate (seconds each) per `ci.yml` run. Accepted for the
   ~30-minute savings on learnings PRs.

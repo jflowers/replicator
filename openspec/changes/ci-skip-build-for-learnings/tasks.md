@@ -18,17 +18,20 @@
 
 - [x] 1.1 [P] In `.github/workflows/ci.yml`, add a `changes` job:
       checkout with the existing pinned `actions/checkout`
-      (v7.0.1) and `fetch-depth: 0`; on `pull_request`, run
-      `git diff --name-only --no-renames "$BASE_SHA...$HEAD_SHA"`
-      with `BASE_SHA` and `HEAD_SHA` supplied via the step's
-      `env:` block from `github.event.pull_request.base.sha` and
+      (v7.0.1) and `fetch-depth: 2`; on `pull_request`, check
+      that the merge commit's second parent (`HEAD^2`) is
+      `HEAD_SHA`, supplied via the step's `env:` block from
       `github.event.pull_request.head.sha` (never interpolated
       into `run:` -- event-context template injection is a zizmor
-      finding; cf. `ci_dependencies.yml`), and
+      finding; cf. `ci_dependencies.yml`), run
+      `git diff --name-only --no-renames 'HEAD^1' HEAD` (never a
+      diff against `pull_request.base.sha`, which can predate
+      the `main` merged into the branch), and
       set output `code` to `'true'` when any changed file lacks
       the `.uf/dewey/learnings/` prefix, `'false'` otherwise; on
       `push`, set `code: 'true'` unconditionally; fail the job
-      if the diff command fails (CLS-FR-001). Give
+      if the parent check or the diff command fails
+      (CLS-FR-001). Give
       `build-and-test` `needs: [changes]` and
       `if: needs.changes.outputs.code == 'true'`, steps
       unchanged (CLS-FR-002). Add a `ci-ok` job named `CI OK`

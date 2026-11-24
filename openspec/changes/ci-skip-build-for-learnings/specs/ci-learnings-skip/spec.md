@@ -15,16 +15,19 @@
 
 **ID**: CLS-FR-001
 
-`.github/workflows/ci.yml` MUST define a `changes` job that runs on every event the workflow
-handles. On `pull_request` events it MUST compute the changed files
-against the pull request base (`git diff --name-only --no-renames
-"$BASE_SHA...$HEAD_SHA"`) and set output `code` to `'true'` when any
-changed file is outside `.uf/dewey/learnings/`, and `'false'`
-otherwise. Rename detection MUST be disabled in the diff so that a
+`.github/workflows/ci.yml` MUST define a `changes` job that runs on
+every event the workflow handles. On `pull_request` events it MUST
+compute the changed files as the diff of the pull request merge
+commit against its first parent (`git diff --name-only --no-renames
+'HEAD^1' HEAD` on `refs/pull/N/merge`) -- what merging the PR would
+change on the current `main` -- and set output `code` to `'true'`
+when any changed file is outside `.uf/dewey/learnings/`, and
+`'false'` otherwise. Rename detection MUST be disabled in the diff so that a
 file moved into `.uf/dewey/learnings/` still counts its source path
 as a change outside learnings. On `push` events to `main` it MUST set
-`code` to `'true'` unconditionally. If the diff step fails, the
-`changes` job MUST fail rather than guess (fail closed).
+`code` to `'true'` unconditionally. If the checkout is not a merge
+commit whose second parent is the pull request head, or the diff
+fails, the `changes` job MUST fail rather than guess (fail closed).
 
 #### Scenario: Learnings-only PR detected
 
@@ -39,6 +42,15 @@ as a change outside learnings. On `push` events to `main` it MUST set
   `.uf/dewey/learnings/` and one file anywhere else
 - **WHEN** the `changes` job runs
 - **THEN** output `code` MUST equal `'true'`
+
+#### Scenario: Learnings PR updated from main stays learnings-only
+
+- **GIVEN** a pull request whose own changes are all under
+  `.uf/dewey/learnings/`, whose branch was updated from a `main`
+  that has since gained changes outside learnings, and whose event
+  base SHA predates that `main`
+- **WHEN** the `changes` job runs
+- **THEN** output `code` MUST equal `'false'`
 
 #### Scenario: Push to main always runs CI
 
@@ -56,8 +68,9 @@ as a change outside learnings. On `push` events to `main` it MUST set
 
 #### Scenario: Diff failure fails closed
 
-- **GIVEN** the base SHA cannot be resolved or `git diff` exits
-  non-zero
+- **GIVEN** the checkout is not the pull request merge commit,
+  its second parent is not the pull request head, or `git diff`
+  exits non-zero
 - **WHEN** the `changes` job runs
 - **THEN** the job MUST fail
 - **AND** no gated job MUST report success
