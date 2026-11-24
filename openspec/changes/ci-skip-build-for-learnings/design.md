@@ -78,7 +78,9 @@ check, but the aggregate in D5 carries the guarantee regardless.
 
 The `changes` job uses the already-pinned
 `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1`
-(v7.0.1) with `fetch-depth: 2`. On `pull_request` the checkout
+(v7.0.1) with `fetch-depth: 2`, only on `pull_request` (push
+runs short-circuit before any diff, D3, so they skip the
+checkout). On `pull_request` the checkout
 is `refs/pull/N/merge`, GitHub's merge of the PR head into the
 current `main`; depth 2 fetches it and both parents. The job runs
 
@@ -146,9 +148,19 @@ check do real work. `ci_dependencies.yml` is left ungated
 ### D5. One aggregate, in `ci.yml`
 
 `ci.yml` gets a `ci-ok` aggregate job named `CI OK`, with
-`needs: [changes, build-and-test]`. It uses `if: always()` and
-fails when any needed job's result is `failure` or `cancelled`;
-skipped counts as success. It covers future matrix jobs the same
+`needs: [changes, build-and-test]`. It uses
+`if: always() && !(github.event_name == 'push' && cancelled())` and fails when any needed job's result is `failure`
+or `cancelled`; skipped counts as success.
+
+The one exemption is a push run that was itself cancelled. With
+`concurrency.cancel-in-progress`, a newer push to `main` cancels
+the older run; an aggregate that ran anyway would see `cancelled`
+and leave a red `CI OK` on a commit that was superseded, not
+broken. Skipping it there is safe because `CI OK` gates merges,
+not pushes, and release preflight checks `Build and Test` and
+`Standardized CI / Run linters` by name. Pull request runs get no
+exemption: a skipped job satisfies a required check, so skipping
+`CI OK` on a cancelled PR run would let the PR merge untested. It covers future matrix jobs the same
 way, and makes later changes to the gated job list free -- the
 aggregate's `needs` is the only wiring to extend.
 
@@ -190,7 +202,7 @@ and asserts structure via the existing `yamlSection` /
 `readRepositoryFile` helpers (no yaml dependency, no Node.js, no
 network for structural assertions). It asserts the `changes`
 wiring, `build-and-test`'s `needs`/`if:`, the aggregate's
-`if: always()`/`needs`/failure semantics, that
+`if:`/`needs`/failure semantics, that
 `call-reusable-ci` stays ungated, and the absence of
 `paths`/`paths-ignore`. This keeps the constitution's
 Testability principle honest: the gating is verified by

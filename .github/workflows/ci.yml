@@ -31,7 +31,10 @@ jobs:
     outputs:
       code: ${{ steps.detect.outputs.code }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      # Pushes never diff (see the push short-circuit below), so they
+      # skip the checkout.
+      - if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
           # On pull_request the checkout is refs/pull/N/merge; depth 2
@@ -193,7 +196,13 @@ jobs:
   ci-ok:
     name: CI OK
     needs: [changes, build-and-test]
-    if: always()
+    # Always run, so a failed or cancelled job fails the check -- except
+    # for a push run that was itself cancelled (superseded by a newer
+    # push to main). That run is not a verdict, so the check is skipped
+    # instead of leaving a red CI OK on main's history. Pull request runs
+    # never skip it: a skipped job satisfies a required check, so a
+    # cancelled PR run must fail.
+    if: always() && !(github.event_name == 'push' && cancelled())
     runs-on: ubuntu-latest
     steps:
       - name: Fail when a needed job failed or was cancelled

@@ -35,9 +35,11 @@
       `build-and-test` `needs: [changes]` and
       `if: needs.changes.outputs.code == 'true'`, steps
       unchanged (CLS-FR-002). Add a `ci-ok` job named `CI OK`
-      with `if: always()`, `needs: [changes, build-and-test]`,
-      and a step that fails when any needed job result is
-      `failure` or `cancelled` (CLS-FR-003).
+      with `if: always() && !(github.event_name == 'push' && cancelled())`,
+      `needs: [changes, build-and-test]`, and a step that fails
+      when any needed job result is `failure` or `cancelled`
+      (CLS-FR-003). Check out only on `pull_request`
+      (CLS-FR-004).
 - [x] 1.2 [P] Leave `.github/workflows/ci_checks.yml` as on
       `main`: no `changes` job, no gate on `call-reusable-ci`,
       no aggregate, so secret scanning and PR title validation
@@ -68,7 +70,8 @@
       structural assertions). Assert: `ci.yml` defines a
       `changes` job with output `code`; `build-and-test`
       declares `needs` on `changes` and the gating `if:`; the
-      `ci-ok` job is named `CI OK`, uses `if: always()`, needs
+      `ci-ok` job is named `CI OK`, uses `always()` exempting
+      only cancelled push runs, needs
       `changes` and `build-and-test`, and fails on
       `failure`/`cancelled`; `ci_checks.yml`'s only job is
       `call-reusable-ci`, with neither `if:` nor `needs`;
@@ -124,7 +127,8 @@
       flag, ratchet, and pin is unchanged; ci_checks.yml is
       unchanged from main so secret scanning and PR title
       validation run on every PR; detection fails closed on
-      diff errors; the aggregate runs `if: always()` and fails
+      diff errors; the aggregate runs `always()` (skipped only
+      for cancelled push runs, never PRs) and fails
       on failure/cancelled; settings.yml lists exactly `CI OK`
       and `Standardized CI / Run linters` with `strict: true`
       kept. IV --

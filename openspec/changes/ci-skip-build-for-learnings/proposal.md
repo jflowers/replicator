@@ -55,9 +55,12 @@ Fixes: https://github.com/unbound-force/replicator/issues/182
    call stays cheap for learnings-only PRs.
 
 3. **Aggregate required check**: `ci.yml` gains an aggregate job
-   (id `ci-ok`, named `CI OK`) with `if: always()` and `needs`
+   (id `ci-ok`, named `CI OK`) that always runs, with `needs`
    covering `changes` and `build-and-test`. The aggregate fails when
    any needed job failed or was cancelled; skipped counts as success.
+   It is skipped only when a push run on `main` was itself cancelled
+   (superseded by a newer push), so main's history shows no red
+   `CI OK` for superseded commits; PR runs never skip it.
 
 4. **Branch protection, live and declarative**: The required
    `Build and Test` check is replaced by `CI OK`;
@@ -72,7 +75,7 @@ Fixes: https://github.com/unbound-force/replicator/issues/182
    existing `ci_dependencies_test.go` (reusing its
    `yamlSection`/`readRepositoryFile` helpers), asserts the wiring:
    the `changes` job and its `code` output, `build-and-test`'s
-   `needs`/`if:`, the aggregate's `if: always()`/`needs`/failure
+   `needs`/`if:`, the aggregate's `if:`/`needs`/failure
    semantics, that `call-reusable-ci` stays ungated, the absence of
    `paths`/`paths-ignore` triggers, and the settings.yml contexts. It runs under `make check` with no network
    or external services.

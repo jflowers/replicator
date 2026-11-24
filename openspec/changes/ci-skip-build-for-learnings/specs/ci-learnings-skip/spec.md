@@ -132,10 +132,12 @@ cheap.
 **ID**: CLS-FR-003
 
 `ci.yml` MUST define an aggregate job named `CI OK` with
-`if: always()` and `needs` covering its `changes` job and every
+`if: always() && !(github.event_name == 'push' && cancelled())` and `needs` covering its `changes` job and every
 gated job. The aggregate MUST succeed when every needed job
 either succeeded or was skipped, and MUST fail when any needed
-job failed or was cancelled. Branch protection on `main` MUST
+job failed or was cancelled. It MUST be skipped only for a push
+run that was itself cancelled, and never for a `pull_request`
+run, since a skipped job satisfies a required check. Branch protection on `main` MUST
 require exactly `CI OK` and `Standardized CI / Run linters`,
 replacing `Build and Test` with `CI OK`; the ungated
 `Standardized CI / Run linters` check (CLS-FR-002) stays
@@ -161,9 +163,17 @@ revert the replacement.
 
 #### Scenario: Cancelled job fails the aggregate
 
-- **GIVEN** one of `CI OK`'s needed jobs was cancelled
+- **GIVEN** a `pull_request` run in which one of `CI OK`'s
+  needed jobs was cancelled, including by cancelling the run
 - **WHEN** `CI OK` evaluates its needs
 - **THEN** `CI OK` MUST fail
+
+#### Scenario: Superseded push run leaves no red check
+
+- **GIVEN** a push run on `main` cancelled because a newer push
+  started (`concurrency.cancel-in-progress`)
+- **WHEN** the run finishes
+- **THEN** `CI OK` MUST be skipped rather than fail
 
 #### Scenario: Skipped gated job passes the aggregate
 
@@ -193,7 +203,9 @@ revert the replacement.
 On push to `main`, every job that runs before this change MUST
 still run with identical steps and triggers after it, and every
 check name that reported before MUST still report. Path-based
-skipping MUST apply only to `pull_request` events.
+skipping MUST apply only to `pull_request` events. The `changes`
+job MUST NOT check out the repository on `push` events, since it
+never diffs there.
 
 #### Scenario: Main keeps its check names
 
@@ -233,7 +245,7 @@ always reports on every pull request.
 workflow files and asserts the gating wiring: `ci.yml` defines a
 `changes` job producing output `code`; `build-and-test` declares
 `needs` on `changes` and the gating `if:`; the `CI OK` aggregate
-uses `if: always()`, needs `changes` and `build-and-test`, and
+uses `if: always() && !(github.event_name == 'push' && cancelled())`, needs `changes` and `build-and-test`, and
 fails on `failure` or `cancelled`; `ci_checks.yml`'s only job is
 `call-reusable-ci`, which declares neither `if:` nor `needs`;
 and neither workflow gains `paths` or `paths-ignore` triggers.

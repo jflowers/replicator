@@ -36,7 +36,10 @@ func TestCIGatingWorkflows_StructureEnforcesLearningsSkip(t *testing.T) {
 
 			aggregateJob := yamlSection(t, workflow, "ci-ok", 2)
 			assertMatches(t, aggregateJob, `(?m)^\s+name:\s*`+regexp.QuoteMeta(fixture.aggregateName)+`\s*$`, "aggregate job name")
-			assertMatches(t, aggregateJob, `(?m)^\s+if:\s*always\(\)\s*$`, "aggregate always-run condition")
+			// The only exemption from always() is a cancelled push run; a
+			// skipped aggregate satisfies a required check, so a cancelled
+			// pull_request run must never skip it.
+			assertMatches(t, aggregateJob, `(?m)^\s+if:\s*always\(\) && !\(github\.event_name == 'push' && cancelled\(\)\)\s*$`, "aggregate always-run condition, exempting only cancelled push runs")
 			assertNeeds(t, aggregateJob, "ci-ok", []string{"changes", fixture.gatedJobID})
 			assertMatches(t, aggregateJob, `contains\(needs\.\*\.result,\s*['"]failure['"]\)`, "aggregate failure propagation")
 			assertMatches(t, aggregateJob, `contains\(needs\.\*\.result,\s*['"]cancelled['"]\)`, "aggregate cancellation propagation")
@@ -59,6 +62,7 @@ func TestCIGatingWorkflows_StructureEnforcesLearningsSkip(t *testing.T) {
 // learnings prefix, and failing closed.
 func assertDetectionLogic(t *testing.T, changesJob string) {
 	t.Helper()
+	assertMatches(t, changesJob, `(?m)^\s+- if: github\.event_name == 'pull_request'\n\s+uses: actions/checkout@`, "checkout only on pull_request")
 	assertMatches(t, changesJob, `(?m)^\s+fetch-depth:\s*2\s*$`, "merge commit and both parents fetched")
 	assertMatches(t, changesJob, `if \[ "\$GITHUB_EVENT_NAME" = "push" \]; then\s+echo "[^"]*"\s+echo "code=true" >> "\$GITHUB_OUTPUT"\s+exit 0`, "push short-circuit to code=true")
 	assertMatches(t, changesJob, `git rev-parse --verify --quiet 'HEAD\^2\^\{commit\}'\)"; then\s+echo "[^"]*"\s+exit 1`, "fail closed when HEAD is not a merge commit")
