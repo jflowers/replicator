@@ -116,3 +116,10 @@
       a PR touching any other file, alone or with learnings,
       runs full CI as before; confirm push runs on `main` are
       unchanged.
+- [ ] 5.6 Phase checkpoint (MP-018 exception, design D9): this
+      phase produces no code, so it intentionally closes without
+      a test-suite run; its gates are `openspec validate`
+      (task 5.3), the constitution check (task 5.4), and the
+      post-merge acceptance (task 5.5). Recorded here so the
+      exception is auditable in tasks.md, not only in design
+      prose.
