@@ -16,7 +16,7 @@
 
 ## 1. Workflow gating
 
-- [ ] 1.1 [P] In `.github/workflows/ci.yml`, add a `changes` job:
+- [x] 1.1 [P] In `.github/workflows/ci.yml`, add a `changes` job:
       checkout with the existing pinned `actions/checkout`
       (v7.0.1) and `fetch-depth: 0`; on `pull_request`, run
       `git diff --name-only --no-renames "$BASE_SHA...$HEAD_SHA"`
@@ -35,7 +35,7 @@
       with `if: always()`, `needs: [changes, build-and-test]`,
       and a step that fails when any needed job result is
       `failure` or `cancelled` (CLS-FR-003).
-- [ ] 1.2 [P] In `.github/workflows/ci_checks.yml`, add the same
+- [x] 1.2 [P] In `.github/workflows/ci_checks.yml`, add the same
       `changes` job (CLS-FR-001); give `call-reusable-ci`
       `needs: [changes]` and the gating `if:`, with the reusable
       call and its permissions unchanged (CLS-FR-002); add a
@@ -44,7 +44,7 @@
       the same fail-on-`failure`/`cancelled` step (CLS-FR-003).
       Do not add `paths` or `paths-ignore` to either workflow's
       `on:` block (CLS-FR-005).
-- [ ] 1.3 [P] Update `.github/settings.yml` so
+- [x] 1.3 [P] Update `.github/settings.yml` so
       `required_status_checks.contexts` under the `main` branch
       protection lists exactly `CI OK` and `Standardized CI OK`
       (keeping `strict: true`), replacing `Build and Test` and
@@ -54,14 +54,14 @@
 
 ## 2. Gating checkpoint
 
-- [ ] 2.1 Run `make check` and confirm vet plus the full test
+- [x] 2.1 Run `make check` and confirm vet plus the full test
       suite pass with the phase 1 workflow edits in place. The
       next phase MUST NOT begin while this checkpoint fails
       (meta-prompt MP-018).
 
 ## 3. Workflow gating regression test
 
-- [ ] 3.1 Add `internal/workflowtest/ci_gating_test.go` in the
+- [x] 3.1 Add `internal/workflowtest/ci_gating_test.go` in the
       style of `ci_dependencies_test.go`, reading the repository
       workflow files with the existing `yamlSection` /
       `readRepositoryFile` helpers (no Node.js needed for
@@ -79,14 +79,14 @@
 
 ## 4. Regression test checkpoint
 
-- [ ] 4.1 Run `make check` and confirm the new gating test
+- [x] 4.1 Run `make check` and confirm the new gating test
       passes and no existing test regresses. The next phase MUST
       NOT begin while this checkpoint fails (meta-prompt
       MP-018).
 
 ## 5. Required checks, docs, and verification
 
-- [ ] 5.1 Update `AGENTS.md` required-check references to the
+- [x] 5.1 Update `AGENTS.md` required-check references to the
       new aggregate names (`CI OK`, `Standardized CI OK`) while
       keeping job-name facts (`Build and Test` as the job that
       runs govulncheck) accurate. Sweep `README.md` and `docs/`
@@ -101,14 +101,32 @@
       when this change merges, and push a trivial update to any
       other open PR so it emits the new checks (design D6,
       risk "Required-check transition window").
-- [ ] 5.3 Run `openspec validate ci-skip-build-for-learnings`
+- [x] 5.3 Run `openspec validate ci-skip-build-for-learnings`
       and resolve every validation error.
-- [ ] 5.4 Constitution alignment verification per the proposal:
+- [x] 5.4 Constitution alignment verification per the proposal:
       I (N/A -- no MCP or artifact interfaces), II (PASS -- no
       runtime or new action dependency), III (PASS -- observable
       `skipped` states, fail-closed aggregates, no threshold or
       flag weakened), IV (PASS -- isolated workflow regression
       test, `make check` green).
+      Audited independently against
+      .specify/memory/constitution.md and the actual diffs, not
+      the proposal's claims: I -- the change surface
+      (git diff --name-status main) is workflow YAML,
+      .github/settings.yml, AGENTS.md, spec artifacts, and one
+      test file; no MCP, tools, comms, or cmd/ code. II -- the
+      only new action reference reuses the already-pinned
+      actions/checkout@3d3c42e5 (v7.0.1); go.mod, go.sum, and
+      every non-test Go file are untouched. III -- the gated
+      jobs' diffs add only `needs:` and `if:`; every step,
+      flag, ratchet, and pin is unchanged; detection fails
+      closed on diff errors; both aggregates run `if: always()`
+      and fail on failure/cancelled; settings.yml lists exactly
+      the two aggregates with `strict: true` kept. IV --
+      ci_gating_test.go uses only the pure os.ReadFile/regex
+      helpers (no Node, network, or git subprocess); `make
+      check` green and `openspec validate` error-free,
+      2026-11-24.
 - [ ] 5.5 Post-merge acceptance (issue #182 "Done when"): open a
       PR adding only a file under `.uf/dewey/learnings/` and
       confirm every required check passes within a couple of
@@ -116,7 +134,7 @@
       a PR touching any other file, alone or with learnings,
       runs full CI as before; confirm push runs on `main` are
       unchanged.
-- [ ] 5.6 Phase checkpoint (MP-018 exception, design D9): this
+- [x] 5.6 Phase checkpoint (MP-018 exception, design D9): this
       phase produces no code, so it intentionally closes without
       a test-suite run; its gates are `openspec validate`
       (task 5.3), the constitution check (task 5.4), and the
