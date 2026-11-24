@@ -15,8 +15,7 @@
 
 **ID**: CLS-FR-001
 
-Both `.github/workflows/ci.yml` and `.github/workflows/ci_checks.yml`
-MUST define a `changes` job that runs on every event the workflow
+`.github/workflows/ci.yml` MUST define a `changes` job that runs on every event the workflow
 handles. On `pull_request` events it MUST compute the changed files
 against the pull request base (`git diff --name-only --no-renames
 "$BASE_SHA...$HEAD_SHA"`) and set output `code` to `'true'` when any
@@ -63,25 +62,44 @@ as a change outside learnings. On `push` events to `main` it MUST set
 - **THEN** the job MUST fail
 - **AND** no gated job MUST report success
 
-### Requirement: Gated execution of expensive jobs
+### Requirement: Gated build and test, ungated security and title checks
 
 **ID**: CLS-FR-002
 
-The `build-and-test` job in `ci.yml` and the `call-reusable-ci`
-job in `ci_checks.yml` MUST declare `needs` on `changes` and a
-job-level `if:` gating on `needs.changes.outputs.code ==
-'true'`, so they run only when the pull request changes files
-outside `.uf/dewey/learnings/` (or the event is a push to
-`main`). Their steps MUST NOT be otherwise modified.
+The `build-and-test` job in `ci.yml` MUST declare `needs` on
+`changes` and a job-level `if:` gating on
+`needs.changes.outputs.code == 'true'`, so it runs only when the
+pull request changes files outside `.uf/dewey/learnings/` (or
+the event is a push to `main`). Its steps MUST NOT be otherwise
+modified.
 
-#### Scenario: Learnings-only PR skips build, test, and lint
+The `call-reusable-ci` job in `ci_checks.yml` MUST NOT be gated
+(no `needs` on `changes`, no job-level `if:`). It bundles the
+repository secret scanners (betterleaks, KICS) and commitlint PR
+title validation. Learnings files can carry leaked secrets, and a
+PR title's format does not depend on which files the PR touches,
+so both MUST run on every pull request. On pull requests
+MegaLinter lints only changed files, so on a learnings-only PR
+the per-language linters have nothing to lint and the job stays
+cheap.
+
+#### Scenario: Learnings-only PR skips build and test
 
 - **GIVEN** the `changes` job output `code` is `'false'`
 - **WHEN** the workflows run
-- **THEN** `build-and-test` and `call-reusable-ci` MUST be
-  skipped by their `if:`
-- **AND** no Go build, Go test, govulncheck, or MegaLinter step
-  MUST execute
+- **THEN** `build-and-test` MUST be skipped by its `if:`
+- **AND** no Go build, Go test, or govulncheck step MUST execute
+- **AND** `call-reusable-ci` MUST still run secret scanning and
+  PR title validation
+
+#### Scenario: Leaked secret in a learnings file is caught
+
+- **GIVEN** a pull request whose changed files are all under
+  `.uf/dewey/learnings/`, one of which contains a credential
+- **WHEN** the workflows run
+- **THEN** the repository secret scan MUST run and fail
+- **AND** the `Standardized CI / Run linters` required check
+  MUST fail
 
 #### Scenario: Code PR runs full CI
 
@@ -94,33 +112,33 @@ outside `.uf/dewey/learnings/` (or the event is a push to
 
 - **GIVEN** a push to `main`
 - **WHEN** the workflows run
-- **THEN** both gated jobs MUST run
+- **THEN** `build-and-test` and `call-reusable-ci` MUST run
 
-### Requirement: Aggregate required checks
+### Requirement: Aggregate required check
 
 **ID**: CLS-FR-003
 
-Each gated workflow MUST define an aggregate job -- `CI OK` in
-`ci.yml` and `Standardized CI OK` in `ci_checks.yml` -- with
+`ci.yml` MUST define an aggregate job named `CI OK` with
 `if: always()` and `needs` covering its `changes` job and every
 gated job. The aggregate MUST succeed when every needed job
 either succeeded or was skipped, and MUST fail when any needed
-job failed or was cancelled. The two aggregate names MUST be
-distinct so the checks do not collide across workflows. Branch
-protection on `main` MUST require exactly the two aggregate
-checks, replacing `Build and Test` and
-`Standardized CI / Run linters`. The declarative
-branch-protection source `.github/settings.yml` MUST list the same
-two aggregate checks in its `required_status_checks.contexts`, so a
-settings sync cannot revert the replacement.
+job failed or was cancelled. Branch protection on `main` MUST
+require exactly `CI OK` and `Standardized CI / Run linters`,
+replacing `Build and Test` with `CI OK`; the ungated
+`Standardized CI / Run linters` check (CLS-FR-002) stays
+required unchanged. The declarative branch-protection source
+`.github/settings.yml` MUST list the same two checks in its
+`required_status_checks.contexts`, so a settings sync cannot
+revert the replacement.
 
 #### Scenario: Learnings-only PR is green within minutes
 
 - **GIVEN** a pull request whose changed files are all under
   `.uf/dewey/learnings/`
 - **WHEN** the checks settle
-- **THEN** `CI OK` and `Standardized CI OK` MUST report success
-- **AND** no build, test, or lint job MUST have run
+- **THEN** `CI OK` and `Standardized CI / Run linters` MUST
+  report success
+- **AND** no build or test job MUST have run
 
 #### Scenario: Gated job failure fails the aggregate
 
@@ -130,30 +148,30 @@ settings sync cannot revert the replacement.
 
 #### Scenario: Cancelled job fails the aggregate
 
-- **GIVEN** one of an aggregate's needed jobs was cancelled
-- **WHEN** the aggregate evaluates its needs
-- **THEN** the aggregate MUST fail
+- **GIVEN** one of `CI OK`'s needed jobs was cancelled
+- **WHEN** `CI OK` evaluates its needs
+- **THEN** `CI OK` MUST fail
 
 #### Scenario: Skipped gated job passes the aggregate
 
-- **GIVEN** `code` is `'false'` so the gated job was skipped by
-  its `if:`
-- **WHEN** the aggregate evaluates its needs
-- **THEN** the aggregate MUST succeed
+- **GIVEN** `code` is `'false'` so `build-and-test` was skipped
+  by its `if:`
+- **WHEN** `CI OK` evaluates its needs
+- **THEN** `CI OK` MUST succeed
 
 #### Scenario: Detection failure fails the aggregate
 
 - **GIVEN** the `changes` job failed
-- **WHEN** the aggregate evaluates its needs
-- **THEN** the aggregate MUST fail
+- **WHEN** `CI OK` evaluates its needs
+- **THEN** `CI OK` MUST fail
 
 #### Scenario: Settings sync cannot revert the required checks
 
 - **GIVEN** branch protection on `main` requires `CI OK` and
-  `Standardized CI OK`
+  `Standardized CI / Run linters`
 - **WHEN** `.github/settings.yml` is applied by a settings sync
 - **THEN** the required checks MUST remain `CI OK` and
-  `Standardized CI OK`
+  `Standardized CI / Run linters`
 
 ### Requirement: Push runs on main are unchanged
 
@@ -199,15 +217,16 @@ always reports on every pull request.
 **ID**: CLS-FR-006
 
 `internal/workflowtest/` MUST contain a Go test that reads both
-workflow files and asserts the gating wiring: each workflow
-defines a `changes` job producing output `code`; each gated job
-declares `needs` on `changes` and the gating `if:`; each
-aggregate job uses `if: always()`, needs its workflow's
-`changes` job and gated jobs, and fails on `failure` or
-`cancelled`; and neither workflow gains `paths` or
-`paths-ignore` triggers. It MUST also assert that
-`.github/settings.yml` lists exactly the two aggregate checks in
-its `required_status_checks.contexts`. The test MUST fail when any
+workflow files and asserts the gating wiring: `ci.yml` defines a
+`changes` job producing output `code`; `build-and-test` declares
+`needs` on `changes` and the gating `if:`; the `CI OK` aggregate
+uses `if: always()`, needs `changes` and `build-and-test`, and
+fails on `failure` or `cancelled`; `ci_checks.yml`'s only job is
+`call-reusable-ci`, which declares neither `if:` nor `needs`;
+and neither workflow gains `paths` or `paths-ignore` triggers.
+It MUST also assert that `.github/settings.yml` lists exactly
+`CI OK` and `Standardized CI / Run linters` in its
+`required_status_checks.contexts`. The test MUST fail when any
 of this wiring is removed or weakened.
 
 #### Scenario: Gating wiring asserted by make check
@@ -219,7 +238,8 @@ of this wiring is removed or weakened.
 #### Scenario: Removed gating fails the test
 
 - **GIVEN** the `if:` condition is deleted from
-  `build-and-test`, or an aggregate job is removed
+  `build-and-test`, the `CI OK` aggregate is removed, or
+  `call-reusable-ci` gains an `if:` or `needs`
 - **WHEN** the workflow gating regression test runs
 - **THEN** it MUST fail
 

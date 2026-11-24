@@ -16,10 +16,13 @@ branches:
       required_status_checks:
         strict: true
         contexts:
-          # Aggregate jobs from ci.yml and ci_checks.yml that always report,
-          # even when gated CI jobs are skipped (issue #182, CLS-FR-003).
+          # Aggregate job from ci.yml that always reports, even when
+          # build-and-test is skipped (issue #182, CLS-FR-003).
           - "CI OK"
-          - "Standardized CI OK"
+          # Never gated: secret scanning and PR title validation run on
+          # every PR (CLS-FR-002). Confirmed by PR 101's Standardized CI
+          # run at the pinned org-infra SHA.
+          - "Standardized CI / Run linters"
       enforce_admins: false
       required_linear_history: false
       restrictions: null

@@ -17,7 +17,6 @@ type gatingWorkflowFixture struct {
 func TestCIGatingWorkflows_StructureEnforcesLearningsSkip(t *testing.T) {
 	fixtures := []gatingWorkflowFixture{
 		{file: "ci.yml", gatedJobID: "build-and-test", aggregateName: "CI OK"},
-		{file: "ci_checks.yml", gatedJobID: "call-reusable-ci", aggregateName: "Standardized CI OK"},
 	}
 	for _, fixture := range fixtures {
 		t.Run(fixture.file, func(t *testing.T) {
@@ -51,13 +50,41 @@ func TestCIGatingWorkflows_StructureEnforcesLearningsSkip(t *testing.T) {
 	}
 }
 
+// TestCIGatingWorkflows_StandardizedCIIsNeverGated guards CLS-FR-002:
+// the reusable call bundles secret scanning (betterleaks, KICS) and PR
+// title validation, which must run on every pull request -- including
+// learnings-only ones, since learnings files can carry leaked secrets.
+func TestCIGatingWorkflows_StandardizedCIIsNeverGated(t *testing.T) {
+	workflow := readRepositoryFile(t, ".github", "workflows", "ci_checks.yml")
+
+	jobs := yamlSection(t, workflow, "jobs", 0)
+	if keys := childKeys(t, jobs, 2); strings.Join(keys, ",") != "call-reusable-ci" {
+		t.Errorf("ci_checks.yml jobs = %v, want exactly [call-reusable-ci]", keys)
+	}
+
+	reusableCall := yamlSection(t, workflow, "call-reusable-ci", 2)
+	for _, key := range []string{"if", "needs"} {
+		if regexp.MustCompile(`(?m)^ {4}` + key + `:`).MatchString(reusableCall) {
+			t.Errorf("call-reusable-ci must not declare %q: secret scanning and PR title validation run on every PR", key)
+		}
+	}
+	assertMatches(t, reusableCall, `(?m)^\s+uses:\s*complytime/org-infra/\.github/workflows/reusable_ci\.yml@`, "org-infra reusable CI call")
+
+	onBlock := yamlSection(t, workflow, "on", 0)
+	for _, filter := range []string{"paths", "paths-ignore"} {
+		if regexp.MustCompile(`(?m)^\s+` + filter + `:\s`).MatchString(onBlock) {
+			t.Errorf("on: block must not filter triggers with %q", filter)
+		}
+	}
+}
+
 func TestCIGatingSettings_RequiredContextsAreAggregates(t *testing.T) {
 	settings := readRepositoryFile(t, ".github", "settings.yml")
 	checks := yamlSection(t, settings, "required_status_checks", 6)
 	contexts := yamlSection(t, checks, "contexts", 8)
 	got := yamlListItems(t, contexts, 10)
 	sort.Strings(got)
-	want := []string{"CI OK", "Standardized CI OK"}
+	want := []string{"CI OK", "Standardized CI / Run linters"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("required_status_checks.contexts = %v, want exactly %v", got, want)
 	}

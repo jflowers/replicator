@@ -1,4 +1,4 @@
-# Tasks: Skip CI Build, Test, and Lint for Learnings-Only PRs
+# Tasks: Skip CI Build and Test for Learnings-Only PRs
 
 **Change**: ci-skip-build-for-learnings
 
@@ -35,20 +35,17 @@
       with `if: always()`, `needs: [changes, build-and-test]`,
       and a step that fails when any needed job result is
       `failure` or `cancelled` (CLS-FR-003).
-- [x] 1.2 [P] In `.github/workflows/ci_checks.yml`, add the same
-      `changes` job (CLS-FR-001); give `call-reusable-ci`
-      `needs: [changes]` and the gating `if:`, with the reusable
-      call and its permissions unchanged (CLS-FR-002); add a
-      `ci-ok` job named `Standardized CI OK` with
-      `if: always()`, `needs: [changes, call-reusable-ci]`, and
-      the same fail-on-`failure`/`cancelled` step (CLS-FR-003).
-      Do not add `paths` or `paths-ignore` to either workflow's
-      `on:` block (CLS-FR-005).
+- [x] 1.2 [P] Leave `.github/workflows/ci_checks.yml` as on
+      `main`: no `changes` job, no gate on `call-reusable-ci`,
+      no aggregate, so secret scanning and PR title validation
+      run on every PR (CLS-FR-002). Do not add `paths` or
+      `paths-ignore` to either workflow's `on:` block
+      (CLS-FR-005).
 - [x] 1.3 [P] Update `.github/settings.yml` so
       `required_status_checks.contexts` under the `main` branch
-      protection lists exactly `CI OK` and `Standardized CI OK`
-      (keeping `strict: true`), replacing `Build and Test` and
-      `Standardized CI / Run linters`. The declarative file must
+      protection lists exactly `CI OK` and
+      `Standardized CI / Run linters` (keeping `strict: true`),
+      replacing `Build and Test` with `CI OK`. The declarative file must
       agree with the live protection task 5.2 writes, so a
       settings sync cannot revert the required checks (CLS-FR-003).
 
@@ -65,17 +62,17 @@
       style of `ci_dependencies_test.go`, reading the repository
       workflow files with the existing `yamlSection` /
       `readRepositoryFile` helpers (no Node.js needed for
-      structural assertions). Assert: both workflows define a
-      `changes` job with output `code`; `build-and-test` and
-      `call-reusable-ci` declare `needs` on `changes` and the
-      gating `if:`; the `ci-ok` jobs are named `CI OK` and
-      `Standardized CI OK`, use `if: always()`, need their
-      workflow's `changes` job plus gated job, and fail on
-      `failure`/`cancelled`; neither workflow's `on:` block
-      contains `paths` or `paths-ignore`; and
-      `.github/settings.yml` lists exactly `CI OK` and
-      `Standardized CI OK` in `required_status_checks.contexts`
-      (CLS-FR-006).
+      structural assertions). Assert: `ci.yml` defines a
+      `changes` job with output `code`; `build-and-test`
+      declares `needs` on `changes` and the gating `if:`; the
+      `ci-ok` job is named `CI OK`, uses `if: always()`, needs
+      `changes` and `build-and-test`, and fails on
+      `failure`/`cancelled`; `ci_checks.yml`'s only job is
+      `call-reusable-ci`, with neither `if:` nor `needs`;
+      neither workflow's `on:` block contains `paths` or
+      `paths-ignore`; and `.github/settings.yml` lists exactly
+      `CI OK` and `Standardized CI / Run linters` in
+      `required_status_checks.contexts` (CLS-FR-006).
 
 ## 4. Regression test checkpoint
 
@@ -86,17 +83,19 @@
 
 ## 5. Required checks, docs, and verification
 
-- [x] 5.1 Update `AGENTS.md` required-check references to the
-      new aggregate names (`CI OK`, `Standardized CI OK`) while
+- [x] 5.1 Update `AGENTS.md` required-check references
+      (`CI OK`, `Standardized CI / Run linters`) while
       keeping job-name facts (`Build and Test` as the job that
       runs govulncheck) accurate. Sweep `README.md` and `docs/`
       for required-check claims and update any that go stale.
 - [ ] 5.2 Update branch protection on `main` so the required
-      checks are exactly `CI OK` and `Standardized CI OK`:
-      fetch the current protection (`gh api
+      checks are exactly `CI OK` and
+      `Standardized CI / Run linters`: fetch the current
+      protection (`gh api
       repos/unbound-force/replicator/branches/main/protection`),
-      rewrite `required_status_checks.contexts` to the two
-      aggregate names, and PUT the full payload back otherwise
+      replace `Build and Test` with `CI OK` in
+      `required_status_checks.contexts`, and PUT the full payload
+      back otherwise
       unchanged. Requires a maintainer with admin. Perform it
       when this change merges, and push a trivial update to any
       other open PR so it emits the new checks (design D6,
@@ -118,19 +117,23 @@
       only new action reference reuses the already-pinned
       actions/checkout@3d3c42e5 (v7.0.1); go.mod, go.sum, and
       every non-test Go file are untouched. III -- the gated
-      jobs' diffs add only `needs:` and `if:`; every step,
-      flag, ratchet, and pin is unchanged; detection fails
-      closed on diff errors; both aggregates run `if: always()`
-      and fail on failure/cancelled; settings.yml lists exactly
-      the two aggregates with `strict: true` kept. IV --
+      job's diff adds only `needs:` and `if:`; every step,
+      flag, ratchet, and pin is unchanged; ci_checks.yml is
+      unchanged from main so secret scanning and PR title
+      validation run on every PR; detection fails closed on
+      diff errors; the aggregate runs `if: always()` and fails
+      on failure/cancelled; settings.yml lists exactly `CI OK`
+      and `Standardized CI / Run linters` with `strict: true`
+      kept. IV --
       ci_gating_test.go uses only the pure os.ReadFile/regex
       helpers (no Node, network, or git subprocess); `make
       check` green and `openspec validate` error-free,
       2026-11-24.
 - [ ] 5.5 Post-merge acceptance (issue #182 "Done when"): open a
       PR adding only a file under `.uf/dewey/learnings/` and
-      confirm every required check passes within a couple of
-      minutes without build, tests, or linters running; confirm
+      confirm every required check passes within a few minutes
+      without the Go build or tests running, and that the
+      secret scan and PR title check still ran; confirm
       a PR touching any other file, alone or with learnings,
       runs full CI as before; confirm push runs on `main` are
       unchanged.

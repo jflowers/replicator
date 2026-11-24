@@ -4,7 +4,7 @@ Dewey learnings PRs (`chore(dewey): store learnings from ...`, branches
 `chore/dewey-learnings-*`) only add Markdown files under
 `.uf/dewey/learnings/`. gh-hud opens them from the fleet's checkouts and
 uf-divisor approves them when every file is a learning. Nothing in them
-can break a build, a test, or a lint, yet each one runs the repo's full
+can break a build or a test, yet each one runs the repo's full
 CI on every push and every update from main. On 2026-11-24, gaze had 16
 open learnings PRs at roughly 30 minutes each, and the queue stalled
 behind unbound-force/gaze#334, whose duplicate runs were cancelled.
@@ -28,7 +28,7 @@ Fixes: https://github.com/unbound-force/replicator/issues/182
 ## What Changes
 
 1. **Change detection job**: Add a cheap `changes` job to
-   `.github/workflows/ci.yml` and `.github/workflows/ci_checks.yml`.
+   `.github/workflows/ci.yml`.
    On `pull_request` events it runs
    `git diff --name-only --no-renames "$BASE_SHA...$HEAD_SHA"` (base
    and head SHAs supplied through the step's `env:` block, never
@@ -40,24 +40,25 @@ Fixes: https://github.com/unbound-force/replicator/issues/182
    `code` to `'true'` unconditionally. Detection fails closed: any
    diff error fails the job.
 
-2. **Gated expensive jobs**: `build-and-test` (ci.yml) and
-   `call-reusable-ci` (ci_checks.yml) get `needs: [changes]` and
-   `if: needs.changes.outputs.code == 'true'`. Job steps, flags
-   (`-race`, `-count=1`, govulncheck, coverage ratchets), action pins,
-   and the reusable workflow call are otherwise unchanged.
+2. **Gated build and test**: `build-and-test` (ci.yml) gets
+   `needs: [changes]` and `if: needs.changes.outputs.code == 'true'`.
+   Job steps, flags (`-race`, `-count=1`, govulncheck, coverage
+   ratchets), and action pins are otherwise unchanged.
+   `.github/workflows/ci_checks.yml` is deliberately left ungated: its
+   reusable call runs the repository secret scanners (betterleaks,
+   KICS) and PR title validation, which must run on every PR --
+   learnings are written from session transcripts and can carry
+   leaked secrets. On PRs MegaLinter lints only changed files, so the
+   call stays cheap for learnings-only PRs.
 
-3. **Aggregate required checks**: Each workflow gains an aggregate
-   job (id `ci-ok`) -- named `CI OK` in ci.yml and
-   `Standardized CI OK` in ci_checks.yml -- with `if: always()` and
-   `needs` covering its `changes` job and every gated job. The
-   aggregate fails when any needed job failed or was cancelled;
-   skipped counts as success. The distinct names keep the two
-   workflows' check runs from colliding, since check-run names are
-   not namespaced by workflow.
+3. **Aggregate required check**: `ci.yml` gains an aggregate job
+   (id `ci-ok`, named `CI OK`) with `if: always()` and `needs`
+   covering `changes` and `build-and-test`. The aggregate fails when
+   any needed job failed or was cancelled; skipped counts as success.
 
-4. **Branch protection, live and declarative**: Required checks move
-   from `Build and Test` and `Standardized CI / Run linters` to
-   `CI OK` and `Standardized CI OK`. The live protection is updated
+4. **Branch protection, live and declarative**: The required
+   `Build and Test` check is replaced by `CI OK`;
+   `Standardized CI / Run linters` stays required. The live protection is updated
    with the GitHub API at merge time (a maintainer step; not an
    in-repo action), and `.github/settings.yml` -- which declares the
    same `required_status_checks.contexts` -- is updated by this
@@ -67,17 +68,18 @@ Fixes: https://github.com/unbound-force/replicator/issues/182
    `internal/workflowtest/ci_gating_test.go`, in the style of the
    existing `ci_dependencies_test.go` (reusing its
    `yamlSection`/`readRepositoryFile` helpers), asserts the wiring:
-   the `changes` jobs and their `code` output, the gated jobs'
-   `needs`/`if:`, the aggregates' `if: always()`/`needs`/failure
-   semantics, the absence of `paths`/`paths-ignore` triggers, and the
-   settings.yml contexts. It runs under `make check` with no network
+   the `changes` job and its `code` output, `build-and-test`'s
+   `needs`/`if:`, the aggregate's `if: always()`/`needs`/failure
+   semantics, that `call-reusable-ci` stays ungated, the absence of
+   `paths`/`paths-ignore` triggers, and the settings.yml contexts. It runs under `make check` with no network
    or external services.
 
 6. **Documentation**: `AGENTS.md` notes the skip behavior and updates
-   required-check references to the aggregate names.
+   required-check references.
 
 Unchanged: `push` runs on `main` (always full CI; every check name
-that reports today still reports), `ci_dependencies.yml`, the release
+that reports today still reports), `ci_checks.yml`,
+`ci_dependencies.yml`, the release
 preflight (`release.yml` passes
 `ci_checks: '["Build and Test", "Standardized CI / Run linters"]'` to
 ship, and both names still report on main pushes), and every job's
@@ -88,10 +90,11 @@ internal behavior.
 ### New Capabilities
 
 - `ci-learnings-skip`: Change-detection gating for CI jobs on pull
-  requests -- which PRs run the expensive build/test/lint jobs, how
+  requests -- which PRs run the expensive build and test job, how
   the decision is made (learnings-only path filter, rename-safe,
-  fail-closed), and how required checks report when jobs are skipped
-  (aggregate jobs, live and declarative branch protection). Allocates
+  fail-closed), which checks are never skipped (secret scanning, PR
+  title validation), and how required checks report when jobs are
+  skipped (aggregate job, live and declarative branch protection). Allocates
   `CLS-FR-001` through `CLS-FR-006`.
 
 ### Modified Capabilities
@@ -107,23 +110,23 @@ internal behavior.
 
 - `.github/workflows/ci.yml` -- `changes` job, gated `build-and-test`,
   new `CI OK` aggregate
-- `.github/workflows/ci_checks.yml` -- `changes` job, gated
-  `call-reusable-ci`, new `Standardized CI OK` aggregate
 - `.github/settings.yml` -- `required_status_checks.contexts` becomes
-  the two aggregate names
+  `CI OK` and `Standardized CI / Run linters`
 - `internal/workflowtest/ci_gating_test.go` -- new gating regression
   test
 - `AGENTS.md` -- required-check references and skip-behavior note
-- GitHub branch protection settings (live) -- re-pointed to
-  `CI OK` and `Standardized CI OK` at merge time (manual maintainer
-  step, part of tasks)
+- GitHub branch protection settings (live) -- `Build and Test`
+  replaced by `CI OK` at merge time (manual maintainer step, part of
+  tasks)
 - CI behavior: learnings-only PRs show required checks passing within
-  a couple of minutes without running build, tests, or linters; all
+  a few minutes without running the Go build or tests, while secret
+  scanning and PR title validation still run; all
   other PRs (including learnings mixed with any other file) run full
   CI exactly as today; push runs on main are unchanged
 - Gatekeeping note: this change adds conditionality to when jobs run
   but weakens no gate -- every PR still gets a passing/failing verdict
-  from the aggregates, detection fails closed, and the gated jobs keep
+  from `CI OK`, every PR is still secret-scanned and title-checked,
+  detection fails closed, and the gated job keeps
   their flags, scanners, ratchets, and pins untouched
 
 ## Constitution Alignment
@@ -157,8 +160,7 @@ integration, and graceful degradation are unaffected.
 
 The `changes` job emits a machine-readable `code` output; every skip
 or run decision is visible as a job result with logged reasoning; the
-aggregate jobs (`CI OK`, `Standardized CI OK`) give each workflow a
-single observable pass/fail check. Detection fails closed -- a broken
+`CI OK` aggregate gives `ci.yml` a single observable pass/fail check. Detection fails closed -- a broken
 detector fails the required checks rather than silently skipping CI,
 so the quality signal remains trustworthy.
 

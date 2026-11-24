@@ -1,4 +1,4 @@
-# Design: Skip CI Build, Test, and Lint for Learnings-Only PRs
+# Design: Skip CI Build and Test for Learnings-Only PRs
 
 **Change**: ci-skip-build-for-learnings
 
@@ -41,7 +41,9 @@ Two GitHub Actions behaviors constrain the design (issue #182):
 ### Goals
 
 - Learnings-only PRs show every required check passing within a
-  couple of minutes, without running build, tests, or linters.
+  few minutes, without running the Go build or tests.
+- Secret scanning and PR title validation still run on every PR,
+  learnings-only ones included.
 - Any other PR -- code only, or learnings mixed with code --
   runs full CI exactly as today.
 - Push runs on `main` are unchanged, so release preflight (which
@@ -58,6 +60,8 @@ Two GitHub Actions behaviors constrain the design (issue #182):
 - Weakening any quality gate: coverage ratchets, `-race`,
   `-count=1`, govulncheck, and MegaLinter run unchanged wherever
   they run today.
+- Skipping `ci_checks.yml` (see D4: it carries the secret scan and
+  the PR title check, and is cheap on learnings-only PRs).
 
 ## Decisions
 
@@ -65,11 +69,10 @@ Two GitHub Actions behaviors constrain the design (issue #182):
 
 Required checks must always report. `paths-ignore` on a workflow
 that provides a required check leaves the check in "Expected --
-Waiting" forever. Both workflows instead gain a cheap `changes`
-detection job, and the expensive jobs are skipped by job-level
+Waiting" forever. Instead `ci.yml` gains a cheap `changes`
+detection job, and `build-and-test` is skipped by a job-level
 `if:`. A same-name skipped job would already satisfy a required
-check, but the aggregates in D5 carry the guarantee regardless
-and cover the reusable-call caveat.
+check, but the aggregate in D5 carries the guarantee regardless.
 
 ### D2. Plain `git diff`, no new action dependency
 
@@ -100,50 +103,66 @@ are not counted against the PR.
 One source of truth: on `push` events the `changes` job
 short-circuits to `code: 'true'` without consulting a diff.
 Every gated job then runs, and the job graph on `main` is
-today's plus two cheap detection jobs and two aggregates. Push
+today's plus one cheap detection job and one aggregate. Push
 behavior, step lists, and check names on `main` are unchanged.
 
-### D4. Gated jobs: `build-and-test` and `call-reusable-ci`
+### D4. Gate only `build-and-test`; never gate `call-reusable-ci`
 
-`ci.yml`'s `build-and-test` and `ci_checks.yml`'s
-`call-reusable-ci` each get `needs: [changes]` and
-`if: needs.changes.outputs.code == 'true'`. Neither job's steps
-change. `ci_dependencies.yml` is left ungated (Non-Goal).
+`ci.yml`'s `build-and-test` gets `needs: [changes]` and
+`if: needs.changes.outputs.code == 'true'`; its steps do not
+change. This is the ~30-minute job the change exists to skip.
 
-### D5. One aggregate per workflow, with distinct names
+`ci_checks.yml` stays exactly as on `main`, with no `changes`
+job and no gate. Its reusable call bundles more than linting:
 
-Each workflow gets a `ci-ok` aggregate job:
+- **Secret scanning.** `REPOSITORY_BETTERLEAKS` and
+  `REPOSITORY_KICS` inspect the full tree, and `.mega-linter.yml`
+  does not exclude `.uf/`. Learnings are written from session
+  transcripts, so a learnings file is a plausible place for a
+  leaked token. Gating the call would let such a PR pass and be
+  auto-approved.
+- **PR title validation.** commitlint checks the PR title, which
+  becomes the squash-merge message on `main` (DR-005). A title's
+  format has nothing to do with which files a PR touches.
 
-- `ci.yml`: job name `CI OK`,
-  `needs: [changes, build-and-test]`
-- `ci_checks.yml`: job name `Standardized CI OK`,
-  `needs: [changes, call-reusable-ci]`
+Running it costs little: on pull requests MegaLinter runs with
+`VALIDATE_ALL_CODEBASE` false, so per-language linters only see
+changed files, and markdownlint and yamllint exclude `.uf/`. On a
+learnings-only PR only the repository scanners and the title
+check do real work. `ci_dependencies.yml` is left ungated
+(Non-Goal).
 
-Both use `if: always()` and fail when any needed job's result is
-`failure` or `cancelled`; skipped counts as success. The
-aggregate covers the reusable-call caveat from the issue (the
-nested `Standardized CI / Run linters` check never reports when
-the caller is skipped), covers future matrix jobs the same way,
-and makes later changes to the gated job list free -- the
-aggregate's `needs` is the only wiring to extend. Distinct names
-keep the two workflows' checks from colliding, since check-run
-names are not namespaced by workflow.
+### D5. One aggregate, in `ci.yml`
+
+`ci.yml` gets a `ci-ok` aggregate job named `CI OK`, with
+`needs: [changes, build-and-test]`. It uses `if: always()` and
+fails when any needed job's result is `failure` or `cancelled`;
+skipped counts as success. It covers future matrix jobs the same
+way, and makes later changes to the gated job list free -- the
+aggregate's `needs` is the only wiring to extend.
+
+`ci_checks.yml` needs no aggregate: its reusable call is never
+skipped (D4), so the nested `Standardized CI / Run linters`
+check always reports, and the reusable-call caveat from the
+issue does not arise.
 
 ### D6. Branch protection requires the aggregates
 
-Required checks become `CI OK` and `Standardized CI OK`,
-replacing `Build and Test` and
-`Standardized CI / Run linters`. This is strictly stronger, not
-weaker: on any PR where the gated jobs run, an aggregate failure
-blocks the merge; where they are skipped, the skip was earned by
-the path check. The change is made with the GitHub API at merge
-time (task 5.2), because a learnings PR opened after the
-workflows merge but before the protection update would hang on
-`Standardized CI / Run linters` never reporting.
+Required checks become `CI OK` and
+`Standardized CI / Run linters`: `CI OK` replaces
+`Build and Test`, and `Standardized CI / Run linters` stays
+required as today. This is not weaker: on any PR where
+`build-and-test` runs, a failure fails `CI OK` and blocks the
+merge; where it is skipped, the skip was earned by the path
+check; and the secret scan and title check gate every PR. The
+change is made with the GitHub API at merge time (task 5.2),
+because a learnings PR opened after the workflows merge but
+before the protection update would show `Build and Test` as
+skipped.
 
 `.github/settings.yml` declares the same protection
 (`required_status_checks.contexts`) and is updated by this change's
-PR to the two aggregate names, so a settings sync that re-applies
+PR to the same two names, so a settings sync that re-applies
 the file agrees with the live configuration instead of reverting
 it. The regression test (D7) pins the file's contexts alongside
 the workflow wiring.
@@ -159,8 +178,9 @@ where push runs still report every check under today's names
 and asserts structure via the existing `yamlSection` /
 `readRepositoryFile` helpers (no yaml dependency, no Node.js, no
 network for structural assertions). It asserts the `changes`
-wiring, the gated jobs' `needs`/`if:`, the aggregates'
-`if: always()`/`needs`/failure semantics, and the absence of
+wiring, `build-and-test`'s `needs`/`if:`, the aggregate's
+`if: always()`/`needs`/failure semantics, that
+`call-reusable-ci` stays ungated, and the absence of
 `paths`/`paths-ignore`. This keeps the constitution's
 Testability principle honest: the gating is verified by
 `make check`, in isolation, with no external services.
@@ -190,9 +210,9 @@ are `openspec validate` (task 5.3), the constitution check
 
 - **Required-check transition window.** Between merging the
   workflows and updating branch protection, learnings-only PRs
-  would hang on `Standardized CI / Run linters` never reporting;
+  would show the required `Build and Test` as skipped;
   conversely, PRs from branches without the new jobs would not
-  emit the new aggregate checks once protection requires them.
+  emit `CI OK` once protection requires it.
   Mitigation: update protection in the same change (task 5.2,
   at merge time) and push a trivial update to any other open PR
   at that moment.
@@ -202,15 +222,20 @@ are `openspec validate` (task 5.3), the constitution check
   learnings PR that also touches `go.mod` or any Go file runs
   full CI.
 - **Skipped jobs hide run details.** A learnings-only PR shows
-  no coverage numbers or lint results. Accepted: Markdown-only
-  changes cannot affect them, and the skip is visible as
-  `skipped`, not silent.
+  no coverage numbers. Accepted: Markdown-only changes cannot
+  affect them, and the skip is visible as `skipped`, not silent.
+- **Learnings PRs still wait for MegaLinter.** The standardized
+  check runs on every PR (D4), so a learnings-only PR waits for
+  the MegaLinter container to start and run the repository
+  scanners -- minutes, not the ~30 of the Go job. Accepted:
+  secret scanning on content written from session transcripts is
+  worth the wait.
 - **Stale base SHA.** `github.event.pull_request.base.sha` is
   the base at event time; the merge-base semantics of the
   three-dot diff (D2) keep the result correct for the question
   being asked -- did this PR change anything outside learnings.
-- **Extra detection jobs on every run.** Two cheap jobs
-  (seconds each) per workflow per run. Accepted for the
+- **Extra jobs on every run.** One cheap detection job and one
+  aggregate (seconds each) per `ci.yml` run. Accepted for the
   ~30-minute savings on learnings PRs.
 
 Constitution alignment carries over from the proposal: no new

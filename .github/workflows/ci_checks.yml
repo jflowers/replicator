@@ -5,12 +5,6 @@
 # bundles MegaLinter (linters configured in .mega-linter.yml)
 # and commitlint-based PR title validation.
 #
-# A changes job detects whether a pull request touches files
-# outside .uf/dewey/learnings/ and gates the reusable call;
-# pushes to main always run everything. The Standardized CI OK
-# aggregate fails when any needed job fails or is cancelled,
-# so the required check always reports.
-#
 # Runs alongside the existing "Build and Test" job in
 # ci.yml. Both checks must pass for merges and releases.
 #
@@ -35,80 +29,10 @@ concurrency:
 # has no internal concurrency block; caller-level concurrency is intentional.
 
 jobs:
-  changes:
-    name: Detect code changes
-    runs-on: ubuntu-latest
-    outputs:
-      code: ${{ steps.detect.outputs.code }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-
-      - name: Detect code changes
-        id: detect
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          # Pushes to main always run full CI (CLS-FR-001).
-          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            echo "Push event — setting code=true unconditionally."
-            echo "code=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # Fail closed: a failed diff fails the job rather than guessing.
-          if ! CHANGED_FILES="$(git diff --name-only --no-renames "$BASE_SHA...$HEAD_SHA")"; then
-            echo "::error::git diff against the pull request base failed — failing closed (CLS-FR-001)"
-            exit 1
-          fi
-
-          # --no-renames disables rename detection so a file moved into
-          # .uf/dewey/learnings/ still counts its source path as a change
-          # outside learnings.
-          code="false"
-          while IFS= read -r file; do
-            case "$file" in
-              ""|.uf/dewey/learnings/*) ;;
-              *)
-                code="true"
-                break
-                ;;
-            esac
-          done <<< "$CHANGED_FILES"
-
-          if [ "$code" = "true" ]; then
-            echo "Changed files outside .uf/dewey/learnings/ — full CI required."
-          else
-            echo "All changed files are under .uf/dewey/learnings/ — expensive jobs may skip."
-          fi
-          echo "code=$code" >> "$GITHUB_OUTPUT"
-
   call-reusable-ci:
     name: Standardized CI
-    needs: [changes]
-    if: needs.changes.outputs.code == 'true'
     uses: complytime/org-infra/.github/workflows/reusable_ci.yml@8f347ba1aa2c7e9eb3b70e69c1709ddb456cd64a  # v0.9.0
     permissions:
       contents: read
       issues: read
       pull-requests: read
-
-  ci-ok:
-    name: Standardized CI OK
-    needs: [changes, call-reusable-ci]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Fail when a needed job failed or was cancelled
-        if: >-
-          contains(needs.*.result, 'failure') ||
-          contains(needs.*.result, 'cancelled')
-        run: |
-          echo "::error::A needed job failed or was cancelled — CI did not pass."
-          exit 1
-
-      - name: All needed jobs succeeded or were skipped
-        run: echo "All needed jobs succeeded or were skipped."
