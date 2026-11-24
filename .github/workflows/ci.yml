@@ -1,9 +1,13 @@
 # CI
 # --
 # Continuous integration pipeline. Runs on push to main and
-# pull requests. Validates code quality (vet, govulncheck),
-# runs tests with race detection, enforces per-package
-# coverage ratchets, and verifies the binary builds.
+# pull requests. A changes job detects whether a pull request
+# touches files outside .uf/dewey/learnings/ and gates the
+# expensive jobs; pushes to main always run everything. The
+# CI OK aggregate fails when any needed job fails or is
+# cancelled. Validates code quality (vet, govulncheck), runs
+# tests with race detection, enforces per-package coverage
+# ratchets, and verifies the binary builds.
 
 name: CI
 
@@ -21,8 +25,61 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect code changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.detect.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Detect code changes
+        id: detect
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Pushes to main always run full CI (CLS-FR-001).
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            echo "Push event — setting code=true unconditionally."
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Fail closed: a failed diff fails the job rather than guessing.
+          if ! CHANGED_FILES="$(git diff --name-only --no-renames "$BASE_SHA...$HEAD_SHA")"; then
+            echo "::error::git diff against the pull request base failed — failing closed (CLS-FR-001)"
+            exit 1
+          fi
+
+          # --no-renames disables rename detection so a file moved into
+          # .uf/dewey/learnings/ still counts its source path as a change
+          # outside learnings.
+          code="false"
+          while IFS= read -r file; do
+            case "$file" in
+              ""|.uf/dewey/learnings/*) ;;
+              *)
+                code="true"
+                break
+                ;;
+            esac
+          done <<< "$CHANGED_FILES"
+
+          if [ "$code" = "true" ]; then
+            echo "Changed files outside .uf/dewey/learnings/ — full CI required."
+          else
+            echo "All changed files are under .uf/dewey/learnings/ — expensive jobs may skip."
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
   build-and-test:
     name: Build and Test
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -118,3 +175,20 @@ jobs:
 
       - name: Build
         run: go build -o bin/replicator ./cmd/replicator
+
+  ci-ok:
+    name: CI OK
+    needs: [changes, build-and-test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail when a needed job failed or was cancelled
+        if: >-
+          contains(needs.*.result, 'failure') ||
+          contains(needs.*.result, 'cancelled')
+        run: |
+          echo "::error::A needed job failed or was cancelled — CI did not pass."
+          exit 1
+
+      - name: All needed jobs succeeded or were skipped
+        run: echo "All needed jobs succeeded or were skipped."
