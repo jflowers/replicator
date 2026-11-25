@@ -18,11 +18,14 @@
 `.github/workflows/ci.yml` MUST define a `changes` job that runs on
 every event the workflow handles. On `pull_request` events it MUST
 compute the changed files as the diff of the pull request merge
-commit against its first parent (`git diff --name-only --no-renames
+commit against its first parent (`git diff --raw --no-renames
 'HEAD^1' HEAD` on `refs/pull/N/merge`) -- what merging the PR would
-change on the current `main` -- and set output `code` to `'true'`
-when any changed file is outside `.uf/dewey/learnings/`, and
-`'false'` otherwise. Rename detection MUST be disabled in the diff so that a
+change on the current `main` -- and set output `code` to `'false'`
+only when the diff is non-empty and every change is a regular `.md`
+file (mode `100644` or `100755`, or a deletion) under
+`.uf/dewey/learnings/`. It MUST set `code` to `'true'` for any other
+file, a symlink (`120000`) or submodule (`160000`) on either side
+of a change, an empty diff, or a diff line it cannot parse. Rename detection MUST be disabled in the diff so that a
 file moved into `.uf/dewey/learnings/` still counts its source path
 as a change outside learnings. On `push` events to `main` it MUST set
 `code` to `'true'` unconditionally. If the checkout is not a merge
@@ -31,10 +34,23 @@ fails, the `changes` job MUST fail rather than guess (fail closed).
 
 #### Scenario: Learnings-only PR detected
 
-- **GIVEN** a pull request whose changed files are all under
-  `.uf/dewey/learnings/`
+- **GIVEN** a pull request whose changes are all regular `.md`
+  files under `.uf/dewey/learnings/` (added, edited or deleted)
 - **WHEN** the `changes` job runs
 - **THEN** output `code` MUST equal `'false'`
+
+#### Scenario: Non-learning content under the learnings path
+
+- **GIVEN** a pull request adding only a non-`.md` file, a symlink,
+  or a submodule under `.uf/dewey/learnings/`
+- **WHEN** the `changes` job runs
+- **THEN** output `code` MUST equal `'true'`
+
+#### Scenario: Empty diff runs CI
+
+- **GIVEN** a pull request whose merge commit changes nothing
+- **WHEN** the `changes` job runs
+- **THEN** output `code` MUST equal `'true'`
 
 #### Scenario: Mixed PR detected
 

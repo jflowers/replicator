@@ -110,9 +110,10 @@ non-negotiable.
   protection requires `CI OK` (an aggregate in `ci.yml`
   that fails when any needed job failed or was cancelled)
   and `Standardized CI / Run linters`. Pull requests
-  changing only files under `.uf/dewey/learnings/` skip
+  changing only `.md` files under `.uf/dewey/learnings/` skip
   the `Build and Test` job (a `changes` job in `ci.yml`
-  detects this and fails closed on diff errors); the
+  detects this, counts symlinks, submodules and empty
+  diffs as code, and fails closed on diff errors); the
   Standardized CI check is never skipped, so secret
   scanning and PR title validation run on every PR; pushes
   to `main` always run everything. The `Build and Test` job includes

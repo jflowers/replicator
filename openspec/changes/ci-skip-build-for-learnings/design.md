@@ -84,7 +84,7 @@ checkout). On `pull_request` the checkout
 is `refs/pull/N/merge`, GitHub's merge of the PR head into the
 current `main`; depth 2 fetches it and both parents. The job runs
 
-    git diff --name-only --no-renames 'HEAD^1' HEAD
+    git diff --raw --no-renames 'HEAD^1' HEAD
 
 after confirming that `HEAD^2` is the PR head
 (`github.event.pull_request.head.sha`, supplied through the step's
@@ -100,10 +100,15 @@ the `main` merged into the branch by "Update branch", and then the
 merge base is the old base: every change `main` gained since is
 counted against the PR, so a learnings PR in the strict-mode merge
 train runs full CI anyway. The first-parent diff does not depend
-on `base.sha`. Any line
-lacking the `.uf/dewey/learnings/` prefix sets `code: 'true'`.
-`--no-renames` disables rename detection: without it,
-`--name-only` lists only a rename's new path, so a file moved into
+on `base.sha`. `code` is `'false'` only when every line is a
+regular `.md` file (mode `100644`/`100755`, or a deletion) under
+`.uf/dewey/learnings/`, the rule the sibling repos (dewey, gaze,
+unbound-force) use. `--raw` carries file modes, so a symlink
+(`120000`) or submodule (`160000`) under the prefix, which can
+point at arbitrary content, sets `code: 'true'`; so does an empty
+diff or a line that does not parse.
+`--no-renames` disables rename detection: without it, the diff
+lists only a rename's new path, so a file moved into
 `.uf/dewey/learnings/` would hide the deletion of its source
 outside learnings -- fail-open for exactly the PRs the gate must
 catch. This avoids adding `dorny/paths-filter` -- a new third-party

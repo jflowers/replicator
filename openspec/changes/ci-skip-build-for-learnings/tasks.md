@@ -24,7 +24,7 @@
       `github.event.pull_request.head.sha` (never interpolated
       into `run:` -- event-context template injection is a zizmor
       finding; cf. `ci_dependencies.yml`), run
-      `git diff --name-only --no-renames 'HEAD^1' HEAD` (never a
+      `git diff --raw --no-renames 'HEAD^1' HEAD` (never a
       diff against `pull_request.base.sha`, which can predate
       the `main` merged into the branch), and
       set output `code` to `'true'` when any changed file lacks
@@ -151,3 +151,14 @@
       post-merge acceptance (task 5.5). Recorded here so the
       exception is auditable in tasks.md, not only in design
       prose.
+
+## 6. Align with sibling repos
+
+- [x] 6.1 Switch the `changes` diff to `--raw` and count only
+      regular `.md` files (or deletions) under
+      `.uf/dewey/learnings/` as learnings; symlinks, submodules,
+      empty diffs and unparsable lines set `code: 'true'`
+      (CLS-FR-001)
+- [x] 6.2 Add `TestCIGatingWorkflows_DetectionScriptBehavior`,
+      which runs the extracted `changes` script against real
+      merge commits (15 scenarios), and update the text pins

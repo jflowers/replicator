@@ -67,29 +67,60 @@ jobs:
             echo "::error::merge commit's second parent $PR_PARENT is not the PR head $HEAD_SHA — failing closed (CLS-FR-001)"
             exit 1
           fi
-          if ! CHANGED_FILES="$(git diff --name-only --no-renames 'HEAD^1' HEAD)"; then
+          if ! CHANGED_FILES="$(git diff --raw --no-renames 'HEAD^1' HEAD)"; then
             echo "::error::git diff of the pull request merge commit failed — failing closed (CLS-FR-001)"
             exit 1
           fi
 
-          # --no-renames disables rename detection so a file moved into
-          # .uf/dewey/learnings/ still counts its source path as a change
-          # outside learnings.
+          # Learnings-only means every change is a regular .md file under
+          # .uf/dewey/learnings/ (added, edited or deleted), the same rule
+          # as the sibling repos. --no-renames lists both sides of a
+          # rename, so a file moved into learnings still counts its source
+          # path. --raw adds file modes: symlinks (120000) and submodules
+          # (160000) can point anywhere, so they count as code. An empty
+          # diff, a path git had to quote, or a line that does not parse
+          # also counts as code.
           code="false"
-          while IFS= read -r file; do
+          reason=""
+          if [ -z "$CHANGED_FILES" ]; then
+            code="true"
+            reason="no changed files"
+          fi
+          while IFS= read -r line; do
+            [ "$code" = "true" ] && break
+            [ -z "$line" ] && continue
+            # ":<old mode> <new mode> <old sha> <new sha> <status><TAB><path>"
+            meta="${line%%$'\t'*}"
+            file="${line#*$'\t'}"
+            if [ "$meta" = "$line" ] || [ "${meta#:}" = "$meta" ]; then
+              code="true"
+              reason="unparsable diff line: $line"
+              break
+            fi
+            read -r old_mode new_mode _ <<< "${meta#:}"
+            for mode in "$old_mode" "$new_mode"; do
+              case "$mode" in
+                000000|100644|100755) ;;
+                *)
+                  code="true"
+                  reason="mode $mode (symlink or submodule): $file"
+                  ;;
+              esac
+            done
+            [ "$code" = "true" ] && break
             case "$file" in
-              ""|.uf/dewey/learnings/*) ;;
+              .uf/dewey/learnings/?*.md) ;;
               *)
                 code="true"
-                break
+                reason="not a .md file under .uf/dewey/learnings/: $file"
                 ;;
             esac
           done <<< "$CHANGED_FILES"
 
           if [ "$code" = "true" ]; then
-            echo "Changed files outside .uf/dewey/learnings/ — full CI required."
+            echo "Full CI required — $reason"
           else
-            echo "All changed files are under .uf/dewey/learnings/ — expensive jobs may skip."
+            echo "All changed files are learnings under .uf/dewey/learnings/ — expensive jobs may skip."
           fi
           echo "code=$code" >> "$GITHUB_OUTPUT"
 
