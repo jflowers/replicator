@@ -123,15 +123,15 @@ func TestCIGatingWorkflows_StandardizedCIIsNeverGated(t *testing.T) {
 	}
 }
 
-func TestCIGatingSettings_RequiredContextsAreAggregates(t *testing.T) {
+// main's required checks moved to unbound-force/.github's safe-settings
+// (repos/replicator.yml). The Settings app must remove the classic branch
+// protection, not set it again: its strict rule left every open PR behind
+// after each auto-merge.
+func TestCIGatingSettings_ClassicProtectionRetired(t *testing.T) {
 	settings := readRepositoryFile(t, ".github", "settings.yml")
-	checks := yamlSection(t, settings, "required_status_checks", 6)
-	contexts := yamlSection(t, checks, "contexts", 8)
-	got := yamlListItems(t, contexts, 10)
-	sort.Strings(got)
-	want := []string{"CI OK", "Standardized CI / Run linters"}
-	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Errorf("required_status_checks.contexts = %v, want exactly %v", got, want)
+	assertMatches(t, settings, `(?m)^  - name: main\n    protection: null\s*$`, "main's classic protection set to null")
+	if strings.Contains(settings, "required_status_checks") {
+		t.Error("settings.yml must not set required_status_checks; they live in safe-settings")
 	}
 }
 
@@ -161,20 +161,6 @@ func needsJobs(t *testing.T, job, jobID string) []string {
 		t.Fatalf("job %q declares an empty needs list", jobID)
 	}
 	return needs
-}
-
-func yamlListItems(t *testing.T, section string, indentation int) []string {
-	t.Helper()
-	pattern := regexp.MustCompile(fmt.Sprintf(`(?m)^ {%d}- (.+)$`, indentation))
-	matches := pattern.FindAllStringSubmatch(section, -1)
-	if len(matches) == 0 {
-		t.Fatalf("YAML section has no list items at indentation %d", indentation)
-	}
-	items := make([]string, 0, len(matches))
-	for _, match := range matches {
-		items = append(items, strings.Trim(strings.TrimSpace(match[1]), `"'`))
-	}
-	return items
 }
 
 // TestCIGatingWorkflows_DetectionScriptBehavior runs the changes job's

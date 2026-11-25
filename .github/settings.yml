@@ -3,26 +3,12 @@ _extends: .github
 repository:
   has_wiki: true
 
+# main's protection lives in unbound-force/.github's safe-settings
+# (repos/replicator.yml: "CI OK" and "Standardized CI / Run linters",
+# not strict; the org code-repos ruleset requires the code owner's
+# approval). protection: null has the Settings app remove the classic
+# branch protection, whose strict: true left every open PR behind after
+# each auto-merge.
 branches:
   - name: main
-    protection:
-      required_pull_request_reviews:
-        required_approving_review_count: 1
-        dismiss_stale_reviews: true
-        require_code_owner_reviews: true
-        dismissal_restrictions:
-          users: []
-          teams: []
-      required_status_checks:
-        strict: true
-        contexts:
-          # Aggregate job from ci.yml that always reports, even when
-          # build-and-test is skipped (issue #182, CLS-FR-003).
-          - "CI OK"
-          # Never gated: secret scanning and PR title validation run on
-          # every PR (CLS-FR-002). Confirmed by PR 101's Standardized CI
-          # run at the pinned org-infra SHA.
-          - "Standardized CI / Run linters"
-      enforce_admins: false
-      required_linear_history: false
-      restrictions: null
+    protection: null
