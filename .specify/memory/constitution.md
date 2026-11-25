@@ -1,3 +1,24 @@
+<!--
+  SYNC IMPACT REPORT
+  ==================
+  Version change: 1.0.0 → 1.1.0 (MINOR: Spec-First Development
+    replaced by Tier-Routed Workflow)
+  Amendment date: 2026-11-25
+
+  Modified sections:
+    - Development Workflow: "Spec-First Development" (every
+      non-trivial change needs Speckit or OpenSpec) replaced by
+      "Tier-Routed Workflow" — Speckit, OpenSpec, or Quick chosen
+      per change, matching /uf.unleash tier routing. Risk floors
+      keep security, auth, data-loss, and API-breaking changes out
+      of Quick. Branch naming gains `quick/<name>`.
+
+  Unchanged principles: all
+
+  Previous version history:
+    - 1.0.0 (2026-04-05): Initial ratification
+-->
+
 # Replicator Constitution
 
 **parent_constitution**: unbound-force/unbound-force v1.1.0
@@ -83,12 +104,25 @@ environment-dependent.
 
 ## Development Workflow
 
-- **Spec-First Development**: All non-trivial changes MUST
-  be preceded by a spec workflow (Speckit or OpenSpec).
-  Exempt: constitution amendments, typo fixes, emergency
-  hotfixes.
+- **Tier-Routed Workflow**: Every change MUST follow a workflow
+  tier chosen for that change's scope and risk; no single tier is
+  mandatory. Speckit (`specs/NNN-<name>/`) for strategic work: 3+
+  user stories, cross-cutting or cross-repo. OpenSpec
+  (`openspec/changes/<name>/`) for tactical work: 1-2 stories,
+  bounded blast radius. Quick (no spec artifacts) for trivial
+  fixes, chores, and docs changes where ceremony exceeds value.
+  `/uf.unleash` routes a change with no spec through the
+  `tier-routing` rubric; manual work applies the same rubric.
+  Risk floors escalate only: security-sensitive code,
+  authentication or authorization flows, data-loss paths, or a
+  public API break MUST use OpenSpec at minimum, never Quick.
+  When signals conflict between adjacent tiers, choose the
+  heavier one. Every tier, Quick included, keeps the full
+  quality gates (CI, code review). Constitution amendments follow
+  the Governance section.
 - **Branching**: All work MUST occur on feature branches.
   Speckit: `NNN-<name>`. OpenSpec: `opsx/<name>`.
+  Quick: `quick/<name>`.
 - **Code Review**: Every PR MUST receive review. When the
   review council is available, agents MUST run
   `/uf.review-council` and receive APPROVE before PR
@@ -120,4 +154,4 @@ constitution conflict, the org constitution prevails.
 - **Compliance Review**: Constitution Check gate at
   planning phase. Violations are CRITICAL severity.
 
-**Version**: 1.0.0 | **Ratified**: 2026-04-05
+**Version**: 1.1.0 | **Ratified**: 2026-04-05 | **Last Amended**: 2026-11-25
