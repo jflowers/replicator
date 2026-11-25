@@ -2,57 +2,42 @@
 
 ## Dependency review
 
-`.github/workflows/ci_dependencies.yml` handles pull requests targeting
-`main` with the `pull_request` event. This record covers that pull-request
-path only.
+`.github/workflows/ci_dependencies.yml` reviews the dependency changes of
+every pull request targeting `main`, with the `pull_request` event (and of
+pushes to `main`).
 
-- **Default permissions:** `contents: read`, `issues: none`, and
-  `pull-requests: none`. The two reusable-reviewer jobs repeat those
-  read-only permissions.
-- **Write boundary:** Only the comment and approval jobs request
-  `pull-requests: write` (the comment job also requests `issues: read`). Both
-  jobs run only when the event is `pull_request` and the author is
-  `dependabot[bot]`; the approval job also requires successful reviewer
-  results and validated low- or medium-risk release data.
-- **Secrets:** The workflow declares no `secrets:` mapping or inheritance, so
-  it does not pass repository or Dependabot secrets to jobs or reusable
-  workflows. GitHub provides each job's `GITHUB_TOKEN`; the effective token
-  permissions can be lower than the permissions requested by a job.
-- **Checkout:** The workflow contains no checkout action. It does not clone or
-  execute pull-request repository code.
-- **Action integrity:** Every `uses:` reference is pinned to a full commit
-  SHA, including both reusable workflows and the two step actions.
-- **Failed-scan gate:** the general dependency reviewer reports its review
-  conclusion from the scan step's `outcome`. With the v0.9.0 reviewer, a
-  failed dependency scan surfaces as `failure` instead of being masked as
-  `success`, so the approval job's `review_conclusion == 'success'` gate
-  halts Dependabot auto-approval and the pull request requires manual
-  review (fail-closed).
+- **Permissions:** `contents: read`, `issues: none`, and
+  `pull-requests: none`, for the workflow and for its one job, which
+  repeats them.
+- **What it runs:** one job, `General`, calling complytime/org-infra's
+  `reusable_deps_reviewer.yml` (`actions/dependency-review-action`) pinned
+  to a full commit SHA. It writes nothing: no comment, approval or merge.
+- **Secrets and checkout:** no `secrets:` mapping or inheritance, and no
+  checkout action in this workflow.
 
-Untrusted pull-request code cannot execute with privileged credentials in this
-workflow: it is never checked out, default permissions are read-only, and the
-only write-capable jobs are limited to Dependabot pull requests.
+## Dependabot auto-merge
 
-### Effective token behavior and safe degradation
+`.github/workflows/dependabot-automerge.yml` calls jflowers/ship's
+`deps-automerge.yml`, pinned to a full commit SHA, with the
+`pull_request` event.
 
-GitHub evaluates the requested job permissions against the event context. For
-same-repository pull requests, the two reviewer jobs receive only their
-declared read permissions; the comment and approval jobs do not run unless the
-author is `dependabot[bot]`. For fork pull requests, GitHub supplies a
-read-only `GITHUB_TOKEN` and does not make repository secrets available. The
-Dependabot `pull_request` context also has a restricted, read-only token, so
-its comment and approval jobs can receive an authorization response such as
-`403 Resource not accessible by integration` even though they request
-`pull-requests: write`.
-
-The workflow does not compensate by restoring `pull_request_target`, broadening
-permissions, or using a privileged token. It still runs both dependency
-reviewers and preserves their analysis in the workflow logs. If report
-publication receives the expected restricted-token authorization failure, the
-report script emits a notice and skips the comment. If approval receives that
-failure, it emits a notice, records a failed job, and creates no approval; a
-maintainer must review and approve the Dependabot update manually. Other API
-failures remain failures rather than being silently skipped.
+- **Permissions:** `permissions: {}` for the workflow; the one job asks for
+  `contents: write` and `pull-requests: write`, which turning on auto-merge
+  needs.
+- **Who it acts for:** ship's job runs only when the actor and the PR author
+  are `dependabot[bot]` and the head branch is in this repository, so fork
+  PRs and people's pushes to a Dependabot branch never get past its `if`.
+- **What it does:** for a patch or minor update of a package owned by
+  jflowers, unbound-force or zero-dot-force, it runs
+  `dependency-review-action`, checks that the repository allows auto-merge
+  and that `main` requires at least one status check, then turns on
+  auto-merge by rebase. GitHub merges only after the required checks pass
+  and the code-owner review the org ruleset requires. Other updates are left
+  for a maintainer.
+- **Release age:** Dependabot's `cooldown` (`.github/dependabot.yml`) holds
+  third-party releases for a day before opening a PR; our own orgs'
+  releases are excluded.
+- **Secrets:** none are passed.
 
 ## Fullsend shim
 
