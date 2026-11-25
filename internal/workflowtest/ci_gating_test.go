@@ -319,6 +319,7 @@ func (r detectRepo) write(t *testing.T, path, content string) {
 
 func (r detectRepo) head(t *testing.T) string {
 	t.Helper()
+	// #nosec G204 -- r.dir is a t.TempDir() fixture path created by this test.
 	out, err := exec.Command("git", "-C", r.dir, "rev-parse", "HEAD").Output()
 	if err != nil {
 		t.Fatalf("git rev-parse HEAD: %v", err)
