@@ -236,13 +236,26 @@ jobs:
     if: always() && !(github.event_name == 'push' && cancelled())
     runs-on: ubuntu-latest
     steps:
-      - name: Fail when a needed job failed or was cancelled
-        if: >-
-          contains(needs.*.result, 'failure') ||
-          contains(needs.*.result, 'cancelled')
+      # The verdict is plain shell over the needed jobs' results, so
+      # ci_gating_test.go can run it against every combination. Anything
+      # but success or skipped -- failure, cancelled, or a result GitHub
+      # adds later -- fails, and so does an empty result list.
+      - name: Check needed job results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
-          echo "::error::A needed job failed or was cancelled — CI did not pass."
-          exit 1
-
-      - name: All needed jobs succeeded or were skipped
-        run: echo "All needed jobs succeeded or were skipped."
+          echo "Needed job results: ${RESULTS:-<none>}"
+          if [ -z "$RESULTS" ]; then
+            echo "::error::No needed job results — CI did not pass."
+            exit 1
+          fi
+          for result in $RESULTS; do
+            case "$result" in
+              success|skipped) ;;
+              *)
+                echo "::error::A needed job ended '$result' — CI did not pass."
+                exit 1
+                ;;
+            esac
+          done
+          echo "All needed jobs succeeded or were skipped."

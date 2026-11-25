@@ -154,8 +154,13 @@ check do real work. `ci_dependencies.yml` is left ungated
 
 `ci.yml` gets a `ci-ok` aggregate job named `CI OK`, with
 `needs: [changes, build-and-test]`. It uses
-`if: always() && !(github.event_name == 'push' && cancelled())` and fails when any needed job's result is `failure`
-or `cancelled`; skipped counts as success.
+`if: always() && !(github.event_name == 'push' && cancelled())`. Its
+single step reads every needed job's result through
+`RESULTS: ${{ join(needs.*.result, ' ') }}` and is plain shell: it
+passes only when every result is `success` or `skipped`, and fails on
+`failure`, `cancelled`, any other result, or an empty list. Keeping
+the verdict in shell, not a step-level `if:` expression, lets the
+regression test execute it.
 
 The one exemption is a push run that was itself cancelled. With
 `concurrency.cancel-in-progress`, a newer push to `main` cancels
@@ -206,10 +211,13 @@ where push runs still report every check under today's names
 and asserts structure via the existing `yamlSection` /
 `readRepositoryFile` helpers (no yaml dependency, no Node.js, no
 network for structural assertions). It asserts the `changes`
-wiring, `build-and-test`'s `needs`/`if:`, the aggregate's
-`if:`/`needs`/failure semantics, that
+wiring (including the `outputs` mapping, `id: detect`, and the
+`HEAD_SHA` env indirection), `build-and-test`'s `needs`/`if:`, the
+aggregate's `if:`/`needs`, that
 `call-reusable-ci` stays ungated, and the absence of
-`paths`/`paths-ignore`. This keeps the constitution's
+`paths`/`paths-ignore`. Two tests also execute the shell: the
+`changes` script against fixture merge commits, and the `CI OK`
+verdict against every combination of needed-job results. This keeps the constitution's
 Testability principle honest: the gating is verified by
 `make check`, in isolation, with no external services.
 

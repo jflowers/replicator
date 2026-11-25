@@ -32,6 +32,15 @@ func TestCIGatingWorkflows_StructureEnforcesLearningsSkip(t *testing.T) {
 			}
 
 			assertDetectionLogic(t, changesJob)
+			// The decision reaches gated jobs only through this wiring; the
+			// script's own GITHUB_OUTPUT write is executed by
+			// TestCIGatingWorkflows_DetectionScriptBehavior.
+			assertMatches(t, outputs, `(?m)^\s+code:\s*\$\{\{\s*steps\.detect\.outputs\.code\s*\}\}\s*$`, "changes output wired to the detect step")
+			assertMatches(t, changesJob, `(?m)^\s+id:\s*detect\s*$`, "detect step id")
+			assertMatches(t, changesJob, `(?m)^\s+HEAD_SHA:\s*\$\{\{\s*github\.event\.pull_request\.head\.sha\s*\}\}\s*$`, "PR head SHA passed through env, not interpolated")
+			if strings.Contains(yamlLiteralBlock(t, changesJob, "run"), "${{") {
+				t.Error("changes run script must not interpolate ${{ }} expressions; pass them through env")
+			}
 
 			gatedJob := yamlSection(t, workflow, fixture.gatedJobID, 2)
 			assertNeeds(t, gatedJob, fixture.gatedJobID, []string{"changes"})
@@ -44,9 +53,17 @@ func TestCIGatingWorkflows_StructureEnforcesLearningsSkip(t *testing.T) {
 			// pull_request run must never skip it.
 			assertMatches(t, aggregateJob, `(?m)^\s+if:\s*always\(\) && !\(github\.event_name == 'push' && cancelled\(\)\)\s*$`, "aggregate always-run condition, exempting only cancelled push runs")
 			assertNeeds(t, aggregateJob, "ci-ok", []string{"changes", fixture.gatedJobID})
-			assertMatches(t, aggregateJob, `contains\(needs\.\*\.result,\s*['"]failure['"]\)`, "aggregate failure propagation")
-			assertMatches(t, aggregateJob, `contains\(needs\.\*\.result,\s*['"]cancelled['"]\)`, "aggregate cancellation propagation")
-			assertMatches(t, aggregateJob, `(?m)^\s+exit 1\s*$`, "aggregate failure exit")
+			// The verdict itself is executed by
+			// TestCIGatingWorkflows_AggregateVerdictBehavior; here, pin that
+			// it reads every needed job's result and is the job's only step,
+			// so no step-level if: can bypass it.
+			assertMatches(t, aggregateJob, `(?m)^\s+RESULTS:\s*\$\{\{\s*join\(needs\.\*\.result,\s*' '\)\s*\}\}\s*$`, "aggregate reads all needed job results")
+			if steps := regexp.MustCompile(`(?m)^\s+- name:`).FindAllString(aggregateJob, -1); len(steps) != 1 {
+				t.Errorf("ci-ok has %d steps, want exactly 1 (the verdict)", len(steps))
+			}
+			if regexp.MustCompile(`(?m)^\s+- name:.*\n(\s+#.*\n)*\s+if:`).MatchString(aggregateJob) {
+				t.Error("ci-ok verdict step must not have a step-level if:, which could skip it")
+			}
 
 			onBlock := yamlSection(t, workflow, "on", 0)
 			for _, filter := range []string{"paths", "paths-ignore"} {
@@ -334,5 +351,49 @@ func runGit(t *testing.T, gitPath, dir string, args ...string) {
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+}
+
+// TestCIGatingWorkflows_AggregateVerdictBehavior runs CI OK's verdict
+// script against needed-job results, so weakening it (say, only failing
+// when both a failure and a cancellation occur) fails this test.
+func TestCIGatingWorkflows_AggregateVerdictBehavior(t *testing.T) {
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash not found")
+	}
+	workflow := readRepositoryFile(t, ".github", "workflows", "ci.yml")
+	script := yamlLiteralBlock(t, yamlSection(t, workflow, "ci-ok", 2), "run")
+	scriptPath := filepath.Join(t.TempDir(), "verdict.sh")
+	if err := os.WriteFile(scriptPath, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		results string // needs.*.result joined with spaces: changes, build-and-test
+		pass    bool
+	}{
+		{"success success", true},
+		{"success skipped", true},
+		{"success failure", false},
+		{"failure skipped", false},
+		{"success cancelled", false},
+		{"cancelled skipped", false},
+		{"failure cancelled", false},
+		{"success neutral", false},
+		{"", false},
+	}
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf("%q", tc.results), func(t *testing.T) {
+			cmd := exec.Command(bash, "--noprofile", "--norc", "-eo", "pipefail", scriptPath)
+			cmd.Env = []string{"PATH=/usr/bin:/bin", "RESULTS=" + tc.results}
+			out, runErr := cmd.CombinedOutput()
+			if tc.pass && runErr != nil {
+				t.Errorf("verdict failed, want pass: %v\n%s", runErr, out)
+			}
+			if !tc.pass && runErr == nil {
+				t.Errorf("verdict passed, want failure\n%s", out)
+			}
+		})
 	}
 }

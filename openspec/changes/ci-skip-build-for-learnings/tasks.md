@@ -162,3 +162,12 @@
 - [x] 6.2 Add `TestCIGatingWorkflows_DetectionScriptBehavior`,
       which runs the extracted `changes` script against real
       merge commits (15 scenarios), and update the text pins
+- [x] 6.3 Address the council's MEDIUM test-depth advisories: move
+      the `CI OK` verdict from a step-level `contains() ||
+      contains()` condition into a shell step over
+      `join(needs.*.result, ' ')`, add
+      `TestCIGatingWorkflows_AggregateVerdictBehavior` (9 result
+      combinations), and pin the `changes` output mapping,
+      `id: detect`, and the `HEAD_SHA` env indirection. Each
+      pinned property was checked by a mutation that the tests
+      catch.
