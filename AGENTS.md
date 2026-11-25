@@ -185,7 +185,8 @@ Agents MUST NOT cross workflow phase boundaries:
   spec artifacts ONLY (`specs/NNN-*/` directory). No
   source code, test, agent, command, or config changes.
 - **Implement** phase: source code changes allowed,
-  guided by spec artifacts.
+  guided by spec artifacts (Speckit, OpenSpec) or
+  the change description (Quick).
 - **Review** phase: findings and minor fixes only. No new
   features.
 
@@ -298,7 +299,9 @@ Every change follows a workflow, but **which** workflow
 is decided per change -- no single tier is mandatory.
 Pick the tier that fits the change's scope and risk.
 `/uf.unleash` does this automatically through the
-`tier-routing` skill when no spec exists yet; agents
+`tier-routing` skill when a change starts on `main`
+or an unrecognized branch (a tier-named branch missing
+its artifacts stops instead); agents
 working by hand apply the same rubric. The constitution
 (`.specify/memory/constitution.md`) remains the highest-
 authority document in this project -- all work must
@@ -326,8 +329,9 @@ use OpenSpec at minimum -- never Quick.
 
 **Quality gates apply to every tier.** Quick skips spec
 artifacts, not review: CI must pass and the change still
-goes through code review (`/uf.review-council`) before
-merge. Constitution amendments follow the constitution's
+needs an approving code review
+before merge; council review (`/uf.review-council`)
+applies per the exemptions above. Constitution amendments follow the constitution's
 own Governance section.
 
 ## Specification Framework
