@@ -123,16 +123,60 @@ func TestCIGatingWorkflows_StandardizedCIIsNeverGated(t *testing.T) {
 	}
 }
 
-// main's required checks moved to unbound-force/.github's safe-settings
-// (repos/replicator.yml). The Settings app must remove the classic branch
-// protection, not set it again: its strict rule left every open PR behind
-// after each auto-merge.
+// main's required checks are enforced by unbound-force/.github's
+// safe-settings rulesets (repos/replicator.yml plus the org code-repos
+// ruleset), so settings.yml must not manage branch protection: the
+// Settings app removes the classic protection, whose strict rule left
+// every open PR behind after each auto-merge. The assertions are
+// structural -- scoped to main's branches entry and matched by key
+// shape -- so comments and formatting changes neither weaken them nor
+// fail them spuriously.
 func TestCIGatingSettings_ClassicProtectionRetired(t *testing.T) {
 	settings := readRepositoryFile(t, ".github", "settings.yml")
-	assertMatches(t, settings, `(?m)^  - name: main\n    protection: null\s*$`, "main's classic protection set to null")
-	if strings.Contains(settings, "required_status_checks") {
-		t.Error("settings.yml must not set required_status_checks; they live in safe-settings")
+
+	if regexp.MustCompile(`(?m)^\s*required_status_checks:`).MatchString(settings) {
+		t.Error("settings.yml must not set required_status_checks; required checks are enforced by the unbound-force/.github safe-settings ruleset")
 	}
+
+	branches := yamlSection(t, settings, "branches", 0)
+	mainEntry := branchListEntry(t, branches, "main")
+	if !regexp.MustCompile(`(?m)^\s*protection:\s*(?:null|~)\s*$`).MatchString(mainEntry) {
+		t.Error("settings.yml must retire main's classic protection (protection: null); it lives in the unbound-force/.github safe-settings ruleset")
+	}
+}
+
+// branchListEntry returns the "- name: <name>" list entry within a
+// YAML section, whatever indentation the list uses. The entry spans
+// from its "- name" line to the next list entry or section end, so
+// nested keys stay covered without pinning exact indentation.
+func branchListEntry(t *testing.T, section, name string) string {
+	t.Helper()
+	lines := strings.Split(section, "\n")
+	entryPattern := regexp.MustCompile(`^(\s*)-\s*name:\s*['"]?` + regexp.QuoteMeta(name) + `['"]?\s*$`)
+	start := -1
+	entryIndent := 0
+	for index, line := range lines {
+		if match := entryPattern.FindStringSubmatch(line); match != nil {
+			start = index
+			entryIndent = len(match[1])
+			break
+		}
+	}
+	if start < 0 {
+		t.Fatalf("branches section has no list entry named %q", name)
+	}
+	end := len(lines)
+	for index := start + 1; index < len(lines); index++ {
+		line := lines[index]
+		if strings.TrimSpace(line) == "" || strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		if leadingSpaces(line) <= entryIndent {
+			end = index
+			break
+		}
+	}
+	return strings.Join(lines[start:end], "\n")
 }
 
 func assertNeeds(t *testing.T, job, jobID string, want []string) {
