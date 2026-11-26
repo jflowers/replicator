@@ -157,10 +157,14 @@ run, since a skipped job satisfies a required check. Branch protection on `main`
 require exactly `CI OK` and `Standardized CI / Run linters`,
 replacing `Build and Test` with `CI OK`; the ungated
 `Standardized CI / Run linters` check (CLS-FR-002) stays
-required unchanged. The declarative branch-protection source
-`.github/settings.yml` MUST list the same two checks in its
-`required_status_checks.contexts`, so a settings sync cannot
-revert the replacement.
+required unchanged. The two checks MUST be declared in
+unbound-force/.github's safe-settings
+(`safe-settings/repos/replicator.yml`, the
+`safe-settings: replicator required checks` ruleset), without
+the up-to-date rule. `.github/settings.yml` MUST set `main`'s
+`protection` to `null` and MUST NOT set required status checks,
+so the Settings app cannot restore classic branch protection or
+its up-to-date rule.
 
 #### Scenario: Learnings-only PR is green within minutes
 
@@ -206,11 +210,12 @@ revert the replacement.
 
 #### Scenario: Settings sync cannot revert the required checks
 
-- **GIVEN** branch protection on `main` requires `CI OK` and
-  `Standardized CI / Run linters`
-- **WHEN** `.github/settings.yml` is applied by a settings sync
-- **THEN** the required checks MUST remain `CI OK` and
-  `Standardized CI / Run linters`
+- **GIVEN** the `safe-settings: replicator required checks`
+  ruleset requires `CI OK` and `Standardized CI / Run linters`
+- **WHEN** `.github/settings.yml` is applied by the Settings app
+- **THEN** `main` MUST have no classic branch protection
+- **AND** the required checks MUST remain `CI OK` and
+  `Standardized CI / Run linters`, from the ruleset
 
 ### Requirement: Push runs on main are unchanged
 
@@ -265,10 +270,11 @@ uses `if: always() && !(github.event_name == 'push' && cancelled())`, needs `cha
 fails on `failure` or `cancelled`; `ci_checks.yml`'s only job is
 `call-reusable-ci`, which declares neither `if:` nor `needs`;
 and neither workflow gains `paths` or `paths-ignore` triggers.
-It MUST also assert that `.github/settings.yml` lists exactly
-`CI OK` and `Standardized CI / Run linters` in its
-`required_status_checks.contexts`. The test MUST fail when any
-of this wiring is removed or weakened.
+It MUST also assert that `.github/settings.yml` sets `main`'s
+`protection` to `null` and sets no `required_status_checks`, so
+the required checks stay in safe-settings (CLS-FR-003). The test
+MUST fail when any of this wiring is removed or weakened, or
+when `.github/settings.yml` restores classic branch protection.
 
 #### Scenario: Gating wiring asserted by make check
 
@@ -286,8 +292,14 @@ of this wiring is removed or weakened.
 
 ## MODIFIED Requirements
 
-None. This change adds new requirements; no existing requirement
-text is modified.
+- **CLS-FR-003** and **CLS-FR-006** (2026-11-26): `main`'s
+  required checks moved from the classic branch protection in
+  `.github/settings.yml` to unbound-force/.github's safe-settings
+  (unbound-force/.github#82, replicator#205), without the
+  up-to-date rule, which left every open pull request behind after
+  each auto-merge. The checks themselves are unchanged.
+  `.github/settings.yml` now sets `main`'s protection to `null`,
+  and the regression test asserts that instead of the check list.
 
 ## REMOVED Requirements
 

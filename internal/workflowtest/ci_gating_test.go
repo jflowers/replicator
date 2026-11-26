@@ -123,16 +123,100 @@ func TestCIGatingWorkflows_StandardizedCIIsNeverGated(t *testing.T) {
 	}
 }
 
-// main's required checks moved to unbound-force/.github's safe-settings
-// (repos/replicator.yml). The Settings app must remove the classic branch
-// protection, not set it again: its strict rule left every open PR behind
-// after each auto-merge.
+// main's required checks live in unbound-force/.github's safe-settings
+// (repos/replicator.yml), not in .github/settings.yml (CLS-FR-003). The
+// Settings app must remove the classic branch protection, not set it
+// again: its strict rule left every open PR behind after each auto-merge.
 func TestCIGatingSettings_ClassicProtectionRetired(t *testing.T) {
 	settings := readRepositoryFile(t, ".github", "settings.yml")
-	assertMatches(t, settings, `(?m)^  - name: main\n    protection: null\s*$`, "main's classic protection set to null")
-	if strings.Contains(settings, "required_status_checks") {
-		t.Error("settings.yml must not set required_status_checks; they live in safe-settings")
+	if err := classicProtectionRetired(settings); err != nil {
+		t.Error(err)
 	}
+}
+
+// The check must follow the YAML, not its formatting: comments, spacing
+// and quoting don't matter, and restoring any protection must fail.
+func TestCIGatingSettings_ClassicProtectionCheck(t *testing.T) {
+	cases := []struct {
+		name     string
+		settings string
+		wantErr  string
+	}{
+		{"null", "branches:\n  - name: main\n    protection: null\n", ""},
+		{"tilde, quoted name, comments, wider indent", "# required_status_checks: lives in safe-settings\nbranches:\n    -   name: \"main\"  # the default branch\n\n        protection:   ~   # retired\n", ""},
+		{"other branches keep theirs", "branches:\n  - name: release\n    protection:\n      enforce_admins: true\n  - name: main\n    protection: null\n", ""},
+		{"protection restored", "branches:\n  - name: main\n    protection:\n      enforce_admins: false\n", "main's protection"},
+		{"required checks restored", "branches:\n  - name: main\n    protection:\n      required_status_checks:\n        strict: true\n", "required_status_checks"},
+		{"main missing", "branches:\n  - name: release\n    protection: null\n", "no main entry"},
+		{"no branches", "repository:\n  has_wiki: true\n", "no main entry"},
+		{"protection key missing", "branches:\n  - name: main\n", "main's protection"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := classicProtectionRetired(c.settings)
+			switch {
+			case c.wantErr == "" && err != nil:
+				t.Errorf("unexpected error: %v", err)
+			case c.wantErr != "" && err == nil:
+				t.Errorf("want an error containing %q, got none", c.wantErr)
+			case c.wantErr != "" && !strings.Contains(err.Error(), c.wantErr):
+				t.Errorf("error %q does not contain %q", err, c.wantErr)
+			}
+		})
+	}
+}
+
+// classicProtectionRetired reports whether a Settings app file leaves main
+// without classic branch protection: no required_status_checks key
+// anywhere, and main's entry under branches has protection null (or ~).
+func classicProtectionRetired(settings string) error {
+	type line struct {
+		indent int
+		text   string
+	}
+	var lines []line
+	for _, raw := range strings.Split(settings, "\n") {
+		text := raw
+		if i := strings.Index(text, " #"); i >= 0 {
+			text = text[:i]
+		}
+		if strings.HasPrefix(strings.TrimSpace(text), "#") || strings.TrimSpace(text) == "" {
+			continue
+		}
+		lines = append(lines, line{leadingSpaces(text), strings.TrimRight(text, " ")})
+	}
+	keyRE := regexp.MustCompile(`^\s*(?:-\s+)?required_status_checks\s*:`)
+	for _, l := range lines {
+		if keyRE.MatchString(l.text) {
+			return fmt.Errorf("settings.yml sets required_status_checks; main's checks belong in safe-settings")
+		}
+	}
+	nameRE := regexp.MustCompile(`^\s*-\s+name:\s*["']?main["']?\s*$`)
+	protRE := regexp.MustCompile(`^\s*protection:\s*(.*)$`)
+	inBranches := false
+	for i, l := range lines {
+		if l.indent == 0 {
+			inBranches = strings.HasPrefix(l.text, "branches:")
+			continue
+		}
+		if !inBranches || !nameRE.MatchString(l.text) {
+			continue
+		}
+		// main's item: the lines after it, indented deeper than its dash.
+		for _, m := range lines[i+1:] {
+			if m.indent <= l.indent {
+				break
+			}
+			if v := protRE.FindStringSubmatch(m.text); v != nil {
+				if value := strings.TrimSpace(v[1]); value == "null" || value == "~" {
+					return nil
+				}
+				return fmt.Errorf("main's protection is set; it must be null")
+			}
+		}
+		return fmt.Errorf("main's protection is missing; it must be null")
+	}
+	return fmt.Errorf("settings.yml has no main entry under branches with protection null")
 }
 
 func assertNeeds(t *testing.T, job, jobID string, want []string) {

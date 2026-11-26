@@ -106,10 +106,13 @@ non-negotiable.
 - **CI Parity Gate**: Before marking any task complete, run
   the CI-equivalent checks locally. Read
   `.github/workflows/` for the exact commands -- do not
-  rely on memory. Any failure blocks the task. Branch
-  protection requires `CI OK` (an aggregate in `ci.yml`
-  that fails when any needed job failed or was cancelled)
-  and `Standardized CI / Run linters`. Pull requests
+  rely on memory. Any failure blocks the task. `main`
+  requires `CI OK` (an aggregate in `ci.yml` that fails
+  when any needed job failed or was cancelled) and
+  `Standardized CI / Run linters`, through a ruleset in
+  unbound-force/.github's safe-settings
+  (`safe-settings/repos/replicator.yml`), not strict;
+  `.github/settings.yml` sets no branch protection. Pull requests
   changing only `.md` files under `.uf/dewey/learnings/` skip
   the `Build and Test` job (a `changes` job in `ci.yml`
   detects this, counts symlinks, submodules and empty
