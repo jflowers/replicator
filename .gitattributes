@@ -1,0 +1,5 @@
+# Workflow tooling that `uf init` scaffolds from unbound-force. It isn't
+# replicator's own code, so GitHub's language stats leave it out and show
+# replicator as the Go project it is.
+.opencode/** linguist-vendored
+.specify/** linguist-vendored
