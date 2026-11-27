@@ -107,23 +107,25 @@ non-negotiable.
   the CI-equivalent checks locally. Read
   `.github/workflows/` for the exact commands -- do not
   rely on memory. Any failure blocks the task. `main`
-  requires `CI OK` (an aggregate in `ci.yml` that fails
-  when any needed job failed or was cancelled) and
-  `Standardized CI / Run linters`, through a ruleset in
-  unbound-force/.github's safe-settings
+  requires only `CI OK`, an aggregate in `ci.yml`, through a
+  ruleset in unbound-force/.github's safe-settings
   (`safe-settings/repos/replicator.yml`), not strict;
-  `.github/settings.yml` sets no branch protection. Pull requests
-  changing only `.md` files under `.uf/dewey/learnings/` skip
-  the `Build and Test` job (a `changes` job in `ci.yml`
-  detects this, counts symlinks, submodules and empty
-  diffs as code, and fails closed on diff errors); the
-  Standardized CI check is never skipped, so secret
-  scanning and PR title validation run on every PR; pushes
-  to `main` always run everything. The `Build and Test` job includes
+  `.github/settings.yml` sets no branch protection. A `scope`
+  job calls `jflowers/ship`'s `pr-scope.yml`, whose `code`
+  output is `'false'` only for chore pull requests: every
+  changed file a `.md` under `.uf/dewey/learnings/`, or a
+  gh-hud toolkit rollout (author `jflowers`, branch
+  `chore/toolkit-*`, every file under `.opencode/`). Those
+  skip `Build and Test` and `Standardized CI` and get a
+  `Gitleaks` scan of their commits instead; pushes to `main`
+  always run everything. `CI OK` fails unless `scope`
+  succeeded and each job ended as it chose (success when
+  run, skipped when not). The `Build and Test` job includes
   `govulncheck` for vulnerability scanning of Go
   dependencies. The `Standardized CI / Run linters` check
   runs MegaLinter (via `complytime/org-infra` reusable
-  workflow) with linters configured in `.mega-linter.yml`
+  workflow, called from `ci.yml`) with linters configured in
+  `.mega-linter.yml`
   and PR title validation. Note: MegaLinter runs in CI only;
   there is no local equivalent. Use `mega-linter-runner` if
   local linting is needed (requires Docker).

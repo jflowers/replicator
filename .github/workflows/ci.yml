@@ -1,13 +1,14 @@
 # CI
 # --
-# Continuous integration pipeline. Runs on push to main and
-# pull requests. A changes job detects whether a pull request
-# touches files outside .uf/dewey/learnings/ and gates the
-# expensive jobs; pushes to main always run everything. The
-# CI OK aggregate fails when any needed job fails or is
-# cancelled. Validates code quality (vet, govulncheck), runs
-# tests with race detection, enforces per-package coverage
-# ratchets, and verifies the binary builds.
+# Continuous integration pipeline. Runs on push to main and pull
+# requests. A scope job (jflowers/ship's pr-scope.yml) decides whether
+# the expensive jobs run: chore pull requests -- Dewey learnings and
+# gh-hud toolkit rollouts -- skip them and get a gitleaks scan instead;
+# pushes to main always run everything. Validates code quality (vet,
+# govulncheck), runs tests with race detection, enforces per-package
+# coverage ratchets, verifies the binary builds, and runs the org's
+# Standardized CI (MegaLinter, PR title validation, pinact). The CI OK
+# aggregate is the only required check.
 
 name: CI
 
@@ -25,109 +26,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  changes:
-    name: Detect code changes
-    runs-on: ubuntu-latest
-    outputs:
-      code: ${{ steps.detect.outputs.code }}
-    steps:
-      # Pushes never diff (see the push short-circuit below), so they
-      # skip the checkout.
-      - if: github.event_name == 'pull_request'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
-          # On pull_request the checkout is refs/pull/N/merge; depth 2
-          # fetches the merge commit and both of its parents.
-          fetch-depth: 2
-
-      - name: Detect code changes
-        id: detect
-        env:
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          # Pushes to main always run full CI (CLS-FR-001).
-          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            echo "Push event — setting code=true unconditionally."
-            echo "code=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # HEAD is GitHub's merge of the PR head (HEAD^2) into the current
-          # main (HEAD^1), so HEAD^1..HEAD is exactly what merging the PR
-          # would change on main today. Unlike a diff against the event's
-          # base SHA, it does not count main's own changes when
-          # base.sha is older than the main merged into the branch.
-          # Fail closed: anything unexpected fails the job rather than guessing.
-          if ! PR_PARENT="$(git rev-parse --verify --quiet 'HEAD^2^{commit}')"; then
-            echo "::error::HEAD is not the pull request merge commit — failing closed (CLS-FR-001)"
-            exit 1
-          fi
-          if [ "$PR_PARENT" != "$HEAD_SHA" ]; then
-            echo "::error::merge commit's second parent $PR_PARENT is not the PR head $HEAD_SHA — failing closed (CLS-FR-001)"
-            exit 1
-          fi
-          if ! CHANGED_FILES="$(git diff --raw --no-renames 'HEAD^1' HEAD)"; then
-            echo "::error::git diff of the pull request merge commit failed — failing closed (CLS-FR-001)"
-            exit 1
-          fi
-
-          # Learnings-only means every change is a regular .md file under
-          # .uf/dewey/learnings/ (added, edited or deleted), the same rule
-          # as the sibling repos. --no-renames lists both sides of a
-          # rename, so a file moved into learnings still counts its source
-          # path. --raw adds file modes: symlinks (120000) and submodules
-          # (160000) can point anywhere, so they count as code. An empty
-          # diff, a path git had to quote, or a line that does not parse
-          # also counts as code.
-          code="false"
-          reason=""
-          if [ -z "$CHANGED_FILES" ]; then
-            code="true"
-            reason="no changed files"
-          fi
-          while IFS= read -r line; do
-            [ "$code" = "true" ] && break
-            [ -z "$line" ] && continue
-            # ":<old mode> <new mode> <old sha> <new sha> <status><TAB><path>"
-            meta="${line%%$'\t'*}"
-            file="${line#*$'\t'}"
-            if [ "$meta" = "$line" ] || [ "${meta#:}" = "$meta" ]; then
-              code="true"
-              reason="unparsable diff line: $line"
-              break
-            fi
-            read -r old_mode new_mode _ <<< "${meta#:}"
-            for mode in "$old_mode" "$new_mode"; do
-              case "$mode" in
-                000000|100644|100755) ;;
-                *)
-                  code="true"
-                  reason="mode $mode (symlink or submodule): $file"
-                  ;;
-              esac
-            done
-            [ "$code" = "true" ] && break
-            case "$file" in
-              .uf/dewey/learnings/?*.md) ;;
-              *)
-                code="true"
-                reason="not a .md file under .uf/dewey/learnings/: $file"
-                ;;
-            esac
-          done <<< "$CHANGED_FILES"
-
-          if [ "$code" = "true" ]; then
-            echo "Full CI required — $reason"
-          else
-            echo "All changed files are learnings under .uf/dewey/learnings/ — expensive jobs may skip."
-          fi
-          echo "code=$code" >> "$GITHUB_OUTPUT"
+  # code == 'false' only for pull requests whose files are all Dewey
+  # learnings, or a gh-hud toolkit rollout; 'true' for everything else.
+  scope:
+    uses: jflowers/ship/.github/workflows/pr-scope.yml@3b0ce8bf47183be402df9eaec16644c213eee5f7 # main, after v0.11.0
+    permissions:
+      contents: read
 
   build-and-test:
     name: Build and Test
-    needs: [changes]
-    if: needs.changes.outputs.code == 'true'
+    needs: [scope]
+    if: needs.scope.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -224,9 +133,55 @@ jobs:
       - name: Build
         run: go build -o bin/replicator ./cmd/replicator
 
+  # The org's reusable CI: MegaLinter ("Run linters", which includes
+  # betterleaks and KICS), PR title validation and pinact. It lives in
+  # this workflow so CI OK can need it; its check names are unchanged.
+  call-reusable-ci:
+    name: Standardized CI
+    needs: [scope]
+    if: needs.scope.outputs.code == 'true'
+    uses: complytime/org-infra/.github/workflows/reusable_ci.yml@8f347ba1aa2c7e9eb3b70e69c1709ddb456cd64a  # v0.9.0
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+
+  # Chore PRs skip Standardized CI, and with it the secret scan: scan
+  # their commits here instead, since learnings can carry leaked secrets.
+  gitleaks:
+    name: Gitleaks
+    needs: [scope]
+    if: needs.scope.outputs.code == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$tarball" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/$tarball" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP" gitleaks
+
+      # HEAD is the PR merge commit: HEAD^1 is main, HEAD^2 the PR head.
+      - name: Scan the pull request's commits
+        run: |
+          "$RUNNER_TEMP/gitleaks" git . \
+            --log-opts='HEAD^1..HEAD^2' \
+            --redact --verbose --no-banner
+
   ci-ok:
     name: CI OK
-    needs: [changes, build-and-test]
+    needs: [scope, build-and-test, call-reusable-ci, gitleaks]
     # Always run, so a failed or cancelled job fails the check -- except
     # for a push run that was itself cancelled (superseded by a newer
     # push to main). That run is not a verdict, so the check is skipped
@@ -237,25 +192,42 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # The verdict is plain shell over the needed jobs' results, so
-      # ci_gating_test.go can run it against every combination. Anything
-      # but success or skipped -- failure, cancelled, or a result GitHub
-      # adds later -- fails, and so does an empty result list.
+      # ci_gating_test.go can run it against every combination. It passes
+      # only when scope succeeded and the jobs it chose concluded as
+      # chosen: Build and Test and Standardized CI for code (gitleaks
+      # skipped), gitleaks for chores (the others skipped).
       - name: Check needed job results
         env:
-          RESULTS: ${{ join(needs.*.result, ' ') }}
+          SCOPE: ${{ needs.scope.result }}
+          CODE: ${{ needs.scope.outputs.code }}
+          BUILD: ${{ needs.build-and-test.result }}
+          LINT: ${{ needs.call-reusable-ci.result }}
+          GITLEAKS: ${{ needs.gitleaks.result }}
         run: |
-          echo "Needed job results: ${RESULTS:-<none>}"
-          if [ -z "$RESULTS" ]; then
-            echo "::error::No needed job results — CI did not pass."
+          echo "scope=$SCOPE code=$CODE build-and-test=$BUILD call-reusable-ci=$LINT gitleaks=$GITLEAKS"
+          if [ "$SCOPE" != "success" ]; then
+            echo "::error::scope ended '$SCOPE' — CI did not pass."
             exit 1
           fi
-          for result in $RESULTS; do
-            case "$result" in
-              success|skipped) ;;
-              *)
-                echo "::error::A needed job ended '$result' — CI did not pass."
-                exit 1
-                ;;
-            esac
-          done
-          echo "All needed jobs succeeded or were skipped."
+          case "$CODE" in
+            true) want_code=success want_chore=skipped ;;
+            false) want_code=skipped want_chore=success ;;
+            *)
+              echo "::error::scope code output '$CODE' — CI did not pass."
+              exit 1
+              ;;
+          esac
+          fail=0
+          expect() {
+            if [ "$2" != "$3" ]; then
+              echo "::error::$1 ended '${2:-<none>}', want '$3' — CI did not pass."
+              fail=1
+            fi
+          }
+          expect build-and-test "$BUILD" "$want_code"
+          expect call-reusable-ci "$LINT" "$want_code"
+          expect gitleaks "$GITLEAKS" "$want_chore"
+          if [ "$fail" -ne 0 ]; then
+            exit 1
+          fi
+          echo "All needed jobs ended as scope chose."

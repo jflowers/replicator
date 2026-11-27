@@ -4,9 +4,8 @@ repository:
   has_wiki: true
 
 # main's protection lives in unbound-force/.github's safe-settings
-# (repos/replicator.yml: "CI OK" and "Standardized CI / Run linters",
-# not strict; the org code-repos ruleset requires the code owner's
-# approval). protection: null has the Settings app remove the classic
+# (repos/replicator.yml: "CI OK", not strict; the org code-repos
+# ruleset requires the code owner's approval). protection: null has the Settings app remove the classic
 # branch protection, whose strict: true left every open PR behind after
 # each auto-merge.
 branches:
