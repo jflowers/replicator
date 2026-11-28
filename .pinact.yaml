@@ -1,0 +1,17 @@
+# pinact configuration, read by Standardized CI's "Verify action versions"
+# job (complytime/org-infra reusable_ci.yml, which runs pinact).
+#
+# ci.yml's scope job pins jflowers/ship's pr-scope.yml to a pre-release
+# commit on ship's main; the workflow has no released tag yet, so the
+# pin's comment cannot name a tag for pinact's --verify to cross-check.
+# pinact's documented resolution for legitimate untagged SHAs
+# (docs/codes/005, "pre-release pins") is an ignore rule scoped to
+# exactly this action and commit. When the pin is later bumped to a
+# released tag with a "# vX.Y.Z" comment, this rule stops matching and
+# normal verification resumes.
+version: 3
+rules:
+  - ignore: true
+    conditions:
+      - expr: |
+          ActionName == "jflowers/ship/.github/workflows/pr-scope.yml" && ActionVersion == "3b0ce8bf47183be402df9eaec16644c213eee5f7"
